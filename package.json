@@ -1,0 +1,14 @@
+{
+  "name": "meeting-battle",
+  "version": "0.1.0",
+  "private": true,
+  "description": "原生微信小程序：多人会议时间协调，本地模拟里程碑",
+  "scripts": {
+    "test": "node --test --test-isolation=none tests/*.test.js",
+    "check": "node scripts/check.js",
+    "verify": "npm run check && npm test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

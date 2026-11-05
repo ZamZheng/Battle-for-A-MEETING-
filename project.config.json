@@ -1,0 +1,14 @@
+{
+  "description": "会议时间协调：本地模拟工程",
+  "miniprogramRoot": "miniprogram/",
+  "compileType": "miniprogram",
+  "appid": "touristappid",
+  "projectname": "meeting-battle",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "minified": true,
+    "urlCheck": true
+  },
+  "libVersion": "latest"
+}

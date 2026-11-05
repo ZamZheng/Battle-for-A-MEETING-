@@ -1,0 +1,28 @@
+<view class="container">
+ <view class="badge">{{previousId ? '新一轮 · 不沿用旧回复' : '发起会议'}} · 北京时间</view>
+ <view class="title">提出候选时间</view>
+ <view wx:if="{{error}}" class="error">{{error}}</view>
+ <view class="card">
+  <text class="label">会议主题</text><input maxlength="100" value="{{title}}" data-field="title" bindinput="field" placeholder="例如：项目启动讨论"/>
+  <text class="label">会议目的</text><textarea maxlength="1000" value="{{purpose}}" data-field="purpose" bindinput="field" placeholder="让大家知道这次需要讨论什么"/>
+  <text class="label">预计日期（可多选）</text>
+  <picker mode="date" value="{{date}}" bindchange="dateChanged"><view class="picker">{{date}} ▾</view></picker><button bindtap="addDate">添加此日期</button>
+  <view class="row"><view wx:for="{{dates}}" wx:key="*this" class="badge" data-date="{{item}}" bindtap="removeDate">{{item}} ×</view></view>
+  <text class="label">每天可安排时间</text>
+  <view class="row"><picker mode="time" value="{{from}}" data-field="from" bindchange="field"><view class="picker">{{from}} 开始</view></picker><picker mode="time" value="{{to}}" data-field="to" bindchange="field"><view class="picker">{{to}} 结束</view></picker></view>
+  <text class="label">会议时长（分钟）</text><input type="number" value="{{duration}}" data-field="duration" bindinput="field"/>
+  <text class="label">候选开始间隔（分钟）</text><input type="number" value="{{interval}}" data-field="interval" bindinput="field"/>
+  <text class="label">回复截止（不晚于最早候选）</text>
+  <view class="row"><picker mode="date" value="{{deadlineDate}}" data-field="deadlineDate" bindchange="field"><view class="picker">{{deadlineDate}}</view></picker><picker mode="time" value="{{deadlineTime}}" data-field="deadlineTime" bindchange="field"><view class="picker">{{deadlineTime}}</view></picker></view>
+ </view>
+ <view class="card">
+  <view class="heading">预设参会名单</view><view class="muted">每行一人，默认必到。可选人员在行末加英文 ?，例如「李四 · 市场部?」。重名请加备注。发起人如参会，也须列入并认领。</view>
+  <textarea maxlength="1600" value="{{roster}}" data-field="roster" bindinput="field" placeholder="张三 · 产品部&#10;李四 · 市场部?"/>
+ </view>
+ <view class="card">
+  <button bindtap="preview">生成并预览完整候选</button>
+  <view class="muted">点击候选可移除／恢复。最多14个日期、80个候选、30位预设成员，为首版试用限制。</view>
+  <view wx:for="{{slots}}" wx:key="id" class="slot {{item.keep ? '' : 'muted'}}" data-id="{{item.id}}" bindtap="toggleSlot">{{item.keep ? '✓' : '×'}} {{item.label}}</view>
+ </view>
+ <button class="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="publish">发布会议邀请</button>
+</view>

@@ -1,0 +1,50 @@
+<div id="meeting-battle">
+<style>
+#meeting-battle{color-scheme:light dark;font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:light-dark(#172c34,#e4edef);--paper:light-dark(#fff,#19272e);--line:light-dark(#dae3e5,#3c4b52);--soft:light-dark(#f0f5f5,#24363e);--ink:light-dark(#172c34,#e4edef);--brand:light-dark(#136b62,#84d1c6);--yes:light-dark(#e3f4ee,#204a40);--maybe:light-dark(#fff0d2,#514328)}
+#meeting-battle *{box-sizing:border-box}#meeting-battle .mb-app{background:var(--paper);border:1px solid var(--line);border-radius:18px;overflow:hidden}#meeting-battle .mb-head{padding:22px 24px 16px;background:var(--soft)}#meeting-battle .mb-head strong{font-size:20px;font-weight:600}#meeting-battle .mb-meta{font-size:12px;margin-top:6px}#meeting-battle .mb-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:12px;border-bottom:1px solid var(--line)}#meeting-battle button,#meeting-battle input,#meeting-battle select{font:inherit;color:inherit}#meeting-battle button{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:9px 12px;min-height:44px}#meeting-battle button[aria-selected=true],#meeting-battle .mb-main{background:var(--ink);color:var(--paper);border-color:var(--ink)}#meeting-battle button:disabled{opacity:.5}#meeting-battle .mb-panel{padding:22px 24px;min-height:420px}#meeting-battle h3{font-size:18px;margin:0 0 14px;font-weight:600}#meeting-battle p{margin:10px 0}#meeting-battle .mb-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}#meeting-battle label{display:block}#meeting-battle input,#meeting-battle select{display:block;width:100%;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:5px;min-width:0}#meeting-battle .mb-full{grid-column:1/-1}#meeting-battle .mb-foot{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;align-items:center}#meeting-battle .mb-note{font-size:12px}#meeting-battle .mb-table-wrap{overflow-x:auto}#meeting-battle table{width:100%;border-collapse:collapse;white-space:nowrap}#meeting-battle th,#meeting-battle td{text-align:center;border-bottom:1px solid var(--line);padding:10px 8px;font-weight:400}#meeting-battle th:first-child,#meeting-battle td:first-child{text-align:left}#meeting-battle td button{min-width:82px;width:100%}#meeting-battle .yes{background:var(--yes)}#meeting-battle .maybe{background:var(--maybe)}#meeting-battle .mb-result{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--line)}#meeting-battle .mb-small{font-size:12px}#meeting-battle .mb-tag{color:var(--brand);font-weight:600}#meeting-battle .mb-confirm{background:var(--soft);padding:18px;border-radius:12px}#meeting-battle [hidden]{display:none!important}@media(max-width:500px){#meeting-battle .mb-fields{grid-template-columns:1fr}#meeting-battle .mb-panel{padding:18px 14px}#meeting-battle .mb-head{padding:18px 14px}#meeting-battle .mb-result{align-items:flex-start;flex-direction:column}}
+</style>
+<div class="mb-app">
+ <div class="mb-head"><strong>会合 · 共同时间协调</strong><div class="mb-meta">交互原型 · 示例数据 · 不会发出邀请或同步真实日历</div></div>
+ <nav class="mb-tabs" aria-label="预约流程" role="tablist">
+ <button class="cursor-interaction" id="mb-t0" role="tab" aria-selected="true" aria-controls="mb-p0">1 发起需求</button><button class="cursor-interaction" id="mb-t1" role="tab" aria-selected="false" aria-controls="mb-p1">2 填写时间</button><button class="cursor-interaction" id="mb-t2" role="tab" aria-selected="false" aria-controls="mb-p2">3 汇总交集</button><button class="cursor-interaction" id="mb-t3" role="tab" aria-selected="false" aria-controls="mb-p3">4 确认会议</button>
+ </nav>
+ <section class="mb-panel" id="mb-p0" role="tabpanel" aria-labelledby="mb-t0">
+ <h3>先约定边界，再收集时间</h3><div class="mb-fields">
+ <label class="mb-full">会议主题<input id="mb-title" value="项目上线方案评审" maxlength="60"></label>
+ <label>候选日期<input value="2026/11/02 — 2026/11/03" readonly></label><label>会议时长<select id="mb-duration"><option value="60">60 分钟</option><option value="30">30 分钟</option></select></label>
+ <label>工作时间<input value="09:00—18:00，排除午休" readonly></label><label>回复截止<input value="2026/10/30 18:00（北京时间）" readonly></label>
+ <div class="mb-full">必到：王敏（发起人）、林悦、陈晨（你）<br>可选：周航</div>
+ </div><p class="mb-note">示例提供 4 个候选时段；正式版可按 30 分钟间隔生成，再由发起人删选。</p><div class="mb-foot"><button class="mb-main cursor-interaction" id="mb-create">预览邀请，进入填写</button></div>
+ </section>
+ <section class="mb-panel" id="mb-p1" role="tabpanel" aria-labelledby="mb-t1" hidden>
+ <h3>陈晨，你哪些时间可以参加？</h3><p class="mb-note">点击你的状态切换：可以 → 可协调 → 不行。保存后汇总更新；他人数据为示例。</p>
+ <div class="mb-table-wrap"><table><thead><tr><th>候选时段 · 北京时间</th><th>王敏 · 必到</th><th>林悦 · 必到</th><th>周航 · 可选</th><th>你 · 必到</th></tr></thead><tbody id="mb-votes"></tbody></table></div>
+ <div class="mb-foot"><button class="mb-main cursor-interaction" id="mb-save">保存我的时间</button><button class="cursor-interaction" data-next="2">查看汇总</button><span class="mb-note" id="mb-save-state" aria-live="polite">已保存 · 4/4 人已回复</span></div>
+ </section>
+ <section class="mb-panel" id="mb-p2" role="tabpanel" aria-labelledby="mb-t2" hidden>
+ <h3>优先满足必到人员，再比较总人数</h3><p class="mb-note">4/4 人已回复 · 可协调不计入“确定可以” · 未回复时不能判定全员可用</p><div id="mb-results" aria-live="polite"></div><div class="mb-foot"><button class="cursor-interaction" data-next="1">返回修改我的时间</button></div>
+ </section>
+ <section class="mb-panel" id="mb-p3" role="tabpanel" aria-labelledby="mb-t3" hidden>
+ <h3>发起人确认最终时间</h3><div id="mb-final" aria-live="polite"></div><div class="mb-foot"><button class="mb-main cursor-interaction" id="mb-lock">确认并锁定（演示）</button><button class="cursor-interaction" data-next="2">重新选择</button></div><p class="mb-note">正式版锁定后停止投票，生成会议通知及 .ics 日历文件；改期需发起新一轮协调。</p>
+ </section>
+</div>
+<script>
+(()=>{
+const root=document.getElementById('meeting-battle');
+const slots=[{day:'11/02',start:9*60},{day:'11/02',start:14*60},{day:'11/03',start:10*60},{day:'11/03',start:15*60}];
+const others=[[2,2,0],[2,2,2],[2,0,2],[1,2,2]];const text=['不行','可协调','可以'];let saved=[2,1,0,0],draft=[...saved],selected=null,locked=false;
+const stored=window.openai?.widgetState?.modelContent;if(Array.isArray(stored?.votes)&&stored.votes.length===4&&stored.votes.every(x=>[0,1,2].includes(x))){saved=[...stored.votes];draft=[...saved];}
+const el=id=>root.querySelector('#'+id);const time=n=>`${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;
+const label=i=>`${slots[i].day} ${time(slots[i].start)}—${time(slots[i].start+Number(el('mb-duration').value))}`;
+function persist(){window.openai?.setWidgetState?.({modelContent:{votes:saved,duration:Number(el('mb-duration').value)},privateContent:null}).catch(()=>{});}
+function goto(n){for(let i=0;i<4;i++){el('mb-p'+i).hidden=i!==n;el('mb-t'+i).setAttribute('aria-selected',String(i===n));}if(n===2)results();if(n===3)final();}
+function votes(){el('mb-votes').innerHTML=slots.map((s,i)=>`<tr><td>${label(i)}</td>${others[i].map(x=>`<td>${text[x]}</td>`).join('')}<td><button class="cursor-interaction ${draft[i]===2?'yes':draft[i]===1?'maybe':''}" data-slot="${i}" aria-label="${label(i)}，当前${text[draft[i]]}，点击切换">${text[draft[i]]}</button></td></tr>`).join('');}
+function info(i){const all=[...others[i],saved[i]],req=[all[0],all[1],all[3]];return {i,valid:req.every(x=>x===2),yes:all.filter(x=>x===2).length,req:req.filter(x=>x===2).length,maybe:all.filter(x=>x===1).length};}
+function results(){const rows=slots.map((_,i)=>info(i)).sort((a,b)=>Number(b.valid)-Number(a.valid)||b.req-a.req||b.yes-a.yes||a.i-b.i);el('mb-results').innerHTML=rows.map((r,k)=>`<div class="mb-result"><div><div>${label(r.i)} ${k===0&&r.valid?'<span class="mb-tag">优先推荐</span>':''}</div><div class="mb-small">必到确定可以 ${r.req}/3 · 总计确定可以 ${r.yes}/4${r.maybe?' · '+r.maybe+' 人可协调':''}</div></div><button class="cursor-interaction" data-choose="${r.i}" ${r.valid?'':'disabled'}>${r.valid?'选择此时间':'必到未满足'}</button></div>`).join('');if(!rows.some(x=>x.valid))el('mb-results').insertAdjacentHTML('beforeend','<p>没有满足必到人员的时间。建议扩大日期范围或协商后再修改回复。</p>');}
+function final(){const box=el('mb-final');box.replaceChildren();const card=document.createElement('div');card.className='mb-confirm';if(selected===null){card.textContent='请先在汇总页选择一个满足必到人员的时间。';el('mb-lock').disabled=true;}else{const p=document.createElement('p');p.textContent=el('mb-title').value||'未命名会议';card.append(p);const d=document.createElement('p');d.textContent='2026/'+label(selected)+' · 北京时间';card.append(d);const s=document.createElement('p');s.textContent=locked?'已锁定（本地演示）':`必到人员全部可以 · 确定可以 ${info(selected).yes}/4 人`;card.append(s);el('mb-lock').disabled=locked;el('mb-lock').textContent=locked?'已锁定（演示）':'确认并锁定（演示）';}box.append(card);}
+root.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.id.startsWith('mb-t'))goto(Number(b.id.slice(4)));if(b.dataset.next)goto(Number(b.dataset.next));if(b.dataset.slot!==undefined){const i=Number(b.dataset.slot);draft[i]=draft[i]===2?1:draft[i]===1?0:2;votes();el('mb-save-state').textContent='有未保存的修改';}if(b.dataset.choose!==undefined){selected=Number(b.dataset.choose);locked=false;goto(3);}});
+el('mb-create').onclick=()=>goto(1);el('mb-save').onclick=()=>{saved=[...draft];selected=null;locked=false;persist();el('mb-save-state').textContent='已保存 · 汇总已更新';};el('mb-lock').onclick=()=>{if(selected!==null){locked=true;final();}};el('mb-duration').onchange=()=>{selected=null;locked=false;votes();persist();};votes();
+window.addEventListener('openai:set_globals',e=>{const v=e.detail?.globals?.widgetState?.modelContent?.votes;if(Array.isArray(v)&&v.length===4&&v.every(x=>[0,1,2].includes(x))){saved=[...v];draft=[...v];votes();results();}});
+})();
+</script>
+</div>

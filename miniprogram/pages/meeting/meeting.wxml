@@ -1,0 +1,88 @@
+<view class="container">
+ <view class="notice">本地模拟 · 仅本机保存，不是真实微信身份、云端共享或通知服务。</view>
+ <picker range="{{identities}}" range-key="name" value="{{actorIndex}}" bindchange="switchActor"><view class="picker">{{identities[actorIndex].name}} · 切换测试身份 ▾</view></picker>
+ <view wx:if="{{error}}" class="error">{{error}}</view>
+ <button bindtap="refresh">刷新共享结果（会丢弃未提交选择）</button>
+ <block wx:if="{{meeting}}">
+  <view class="title">{{meeting.title}}</view>
+  <view class="card">
+   <view>{{meeting.purpose}}</view><view class="divider"></view>
+   <view class="muted">预计日期：{{datesText}}</view><view class="muted">时长 {{meeting.duration}} 分钟 · 北京时间</view>
+   <view class="muted">回复截止：{{deadline}}</view>
+   <view class="badge">{{meeting.status === 'closed' ? '已截止 · 待确认' : meeting.status === 'locked' ? '已锁定' : meeting.status === 'cancelled' ? '已取消' : '收集中'}}</view>
+   <view class="muted">最后刷新数据：{{updated}} · 版本 {{meeting.version}}</view>
+   <view wx:if="{{meeting.self}}" class="muted">我的身份：{{roleName}} · {{meeting.self.profile.name}}</view>
+   <button wx:if="{{editable}}" bindtap="beginClaim">{{meeting.self ? '认领错了／修改个人信息' : '填写工作姓名并认领身份'}}</button>
+  </view>
+  <view wx:if="{{profileReady}}" class="card">
+   <view class="heading">确认你的会议角色</view><view class="muted">必到角色优先展示；认领后立即生效，无需审批。一个模拟账号只能绑定一个身份。</view>
+   <picker range="{{meeting.roles}}" range-key="label" value="{{roleIndex}}" bindchange="roleChange"><view class="picker">{{meeting.roles[roleIndex].label}} ▾</view></picker>
+   <button class="primary" bindtap="claim" disabled="{{busy}}">认领所选角色</button>
+   <button data-observer="yes" bindtap="claim" disabled="{{busy}}">我不在名单中，仅接收会议信息</button>
+  </view>
+  <view wx:if="{{meeting.status === 'locked'}}" class="card">
+   <view class="heading">最终安排</view><view>{{final.label}}（北京时间）</view><button class="primary" bindtap="copyNotice">复制会议通知</button>
+   <view class="muted">仅接收信息的参与者可在这里查看。当前不会主动推送微信消息。</view>
+  </view>
+  <view wx:if="{{meeting.status === 'cancelled'}}" class="notice">会议已取消，请勿按原安排参加。</view>
+  <view class="card">
+   <view class="heading">大家的选择 · 热力图</view>
+   <view>已回复 {{meeting.submitted}} / {{meeting.total}} · 仅接收信息 {{meeting.observers}} 人</view>
+   <view class="muted">未回复：{{missingText || '无'}}</view>
+   <view wx:if="{{noIntersection}}" class="notice">暂未找到必到人员都可以的时段。</view>
+   <view class="heatmap">
+    <view wx:for="{{slots}}" wx:key="id" class="heatcell {{item.heatClass}}">
+     <view class="slot-date">{{item.heatDate}}</view><view class="heat-time">{{item.heatTime}}</view>
+     <view class="small">可以 {{item.yes}} / {{meeting.total}}</view><view class="small">可协调 {{item.maybe}} · 不行 {{item.no}}</view>
+    </view>
+   </view>
+   <view wx:if="{{canVote}}">
+    <view class="muted">先参考汇总，再选择自己可以参加的时间。下面的选择提交后才共享。</view>
+    <view class="row"><button size="mini" wx:for="{{states}}" wx:key="id" data-choice="{{item.id}}" bindtap="batch">全部{{item.label}}</button></view>
+   </view>
+   <view wx:for="{{slots}}" wx:key="id" wx:for-item="slot" class="slot">
+    <view class="slot-date">{{slot.heatDate}}</view>
+    <view class="slot-time">{{slot.heatTime}}</view>
+    <view class="bar"><view class="yes" style="width:{{slot.yesWidth}}%"></view><view class="maybe" style="width:{{slot.maybeWidth}}%"></view><view class="no" style="width:{{slot.noWidth}}%"></view></view>
+    <view class="badge" wx:if="{{slot.allYes}}">全员明确可以</view><view class="badge" wx:elif="{{slot.eligible}}">必到人员明确可以</view>
+    <view wx:if="{{canVote}}" class="row">
+     <view wx:for="{{states}}" wx:for-item="state" wx:key="id" class="choice {{state.id}} {{slot.choice === state.id ? 'selected' : ''}}" data-slot="{{slot.id}}" data-choice="{{state.id}}" bindtap="pick">{{state.label}}</view>
+    </view>
+    <button wx:if="{{meeting.isOwner && slot.eligible && (meeting.status === 'collecting' || meeting.status === 'closed')}}" data-id="{{slot.id}}" class="primary" bindtap="lock" disabled="{{busy}}">锁定此时段</button>
+   </view>
+   <button wx:if="{{canVote}}" class="primary" bindtap="submit" loading="{{busy}}" disabled="{{busy}}">提交我的全部选择</button>
+   <view wx:if="{{canVote}}" class="muted">未点击提交的选择不会进入汇总，刷新或退出将丢弃。</view>
+  </view>
+  <view wx:if="{{meeting.isOwner}}" class="card">
+   <view class="heading">发起人工具</view>
+   <block wx:if="{{meeting.inviteActive}}"><button bindtap="copyInvite">复制本机模拟邀请路径</button><button bindtap="revoke" disabled="{{busy}}">撤销邀请</button></block>
+   <view wx:else class="muted">邀请已撤销；已加入成员仍可访问。</view>
+   <block wx:if="{{meeting.status === 'collecting' || meeting.status === 'closed'}}">
+    <view class="label">延长回复截止</view>
+    <view class="row"><picker mode="date" data-field="deadlineDate" bindchange="deadlineField"><view class="picker">{{deadlineDate || '选择日期'}}</view></picker><picker mode="time" data-field="deadlineTime" bindchange="deadlineField"><view class="picker">{{deadlineTime || '选择时间'}}</view></picker></view>
+    <button bindtap="extend" disabled="{{busy}}">延长并重新开放</button>
+   </block>
+   <block wx:if="{{editable && managed.length}}">
+    <view class="divider"></view><view class="label">协助更正身份（模拟账号标识可见）</view>
+    <picker range="{{managed}}" range-key="label" value="{{memberIndex}}" bindchange="memberChange"><view class="picker">{{managed[memberIndex].label}}</view></picker>
+    <view wx:if="{{managed[memberIndex].profile.avatar}}"><image class="avatar" src="{{managed[memberIndex].profile.avatar}}"/></view>
+    <view class="muted">昵称：{{managed[memberIndex].profile.nickname || '未填写'}}</view>
+    <picker range="{{moveRoles}}" range-key="label" value="{{moveIndex}}" bindchange="moveChange"><view class="picker">更正为：{{moveRoles[moveIndex].label}}</view></picker>
+    <button bindtap="move" disabled="{{busy}}">迁移身份与选择</button>
+   </block>
+   <button bindtap="newRound">复制主题与名单，开启新一轮</button>
+   <view class="muted">新一轮须重新设置日期、重新认领和填写。旧会议保留历史，不自动取消。</view>
+   <button wx:if="{{meeting.status !== 'cancelled'}}" class="danger" bindtap="cancel" disabled="{{busy}}">取消此会议</button>
+  </view>
+ </block>
+ <view wx:if="{{profileOpen}}" class="overlay">
+  <view class="dialog card">
+   <view class="heading">先让大家认识你</view><view class="muted">工作姓名必填；头像、昵称自愿提供，不读取你的微信号。</view>
+   <input maxlength="40" value="{{name}}" data-field="name" bindinput="profileField" placeholder="工作姓名（必填）"/>
+   <input maxlength="40" value="{{nickname}}" data-field="nickname" bindinput="profileField" placeholder="昵称（自愿填写）"/>
+   <button open-type="chooseAvatar" bindchooseavatar="chooseAvatar">{{avatar ? '重新选择头像' : '自愿选择头像'}}</button><image wx:if="{{avatar}}" class="avatar" src="{{avatar}}"/>
+   <view wx:if="{{error}}" class="error">{{error}}</view>
+   <button class="primary" bindtap="confirmProfile">下一步：确认会议角色</button><button bindtap="closeProfile">暂不认领</button>
+  </view>
+ </view>
+</view>

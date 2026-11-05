@@ -1,0 +1,26 @@
+<view class="container">
+  <view class="badge">本地模拟 · 不连接微信云端</view>
+  <view class="title">把时间，约到一起</view>
+  <view class="muted">先看大家的选择，再找到共同时间。</view>
+  <view class="notice">本版用于流程试用。数据仅保存在本机，切换身份可模拟多人，不代表真实微信登录或跨设备共享。</view>
+  <view wx:if="{{error}}" class="error">{{error}}</view>
+  <view class="card">
+    <view class="label">当前测试身份</view>
+    <picker range="{{identities}}" range-key="name" value="{{actorIndex}}" bindchange="switchActor"><view class="picker">{{identities[actorIndex].name}} ▾</view></picker>
+    <button class="primary" bindtap="create">发起会议协调</button>
+  </view>
+  <view class="card">
+    <view class="heading">我的会议</view>
+    <view wx:if="{{!meetings.length}}" class="muted">还没有会议。创建一场，或粘贴邀请路径加入。</view>
+    <view wx:for="{{meetings}}" wx:key="id" class="slot" data-id="{{item.id}}" bindtap="open">
+      <view>{{item.title}} →</view><view class="muted">{{item.status === 'locked' ? '已锁定' : item.status === 'cancelled' ? '已取消' : '收集／待确认'}} · 更新 {{item.updatedAt}}</view>
+    </view>
+  </view>
+  <view class="card">
+    <view class="heading">通过邀请进入</view>
+    <input placeholder="粘贴本机模拟邀请路径" value="{{invite}}" bindinput="typeInvite"/>
+    <button bindtap="join">打开邀请</button>
+    <view class="muted">先由发起人在会议内复制邀请，再切换身份粘贴；也可直接在会议页切换身份。</view>
+  </view>
+  <button class="danger" bindtap="reset">清空本机模拟数据</button>
+</view>
