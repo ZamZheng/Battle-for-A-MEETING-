@@ -6,7 +6,7 @@
   <text class="label">会议主题</text><input maxlength="100" value="{{title}}" data-field="title" bindinput="field" placeholder="例如：项目启动讨论"/>
   <text class="label">会议目的</text><textarea maxlength="1000" value="{{purpose}}" data-field="purpose" bindinput="field" placeholder="让大家知道这次需要讨论什么"/>
   <text class="label">预计日期（可多选）</text>
-  <picker mode="date" value="{{date}}" bindchange="dateChanged"><view class="picker">{{date}} ▾</view></picker><button bindtap="addDate">添加此日期</button>
+  <picker mode="date" value="{{date}}" bindchange="dateChanged"><view class="picker">{{date}} ▾</view></picker><button class="{{dateAdded ? 'date-added' : 'primary'}}" disabled="{{dateAdded}}" bindtap="addDate">{{dateAdded ? '已添加此日期' : '添加此日期'}}</button>
   <view class="row"><view wx:for="{{dates}}" wx:key="*this" class="badge" data-date="{{item}}" bindtap="removeDate">{{item}} ×</view></view>
   <text class="label">每天可安排时间</text>
   <view class="row"><picker mode="time" value="{{from}}" data-field="from" bindchange="field"><view class="picker">{{from}} 开始</view></picker><picker mode="time" value="{{to}}" data-field="to" bindchange="field"><view class="picker">{{to}} 结束</view></picker></view>
@@ -16,13 +16,35 @@
   <view class="row"><picker mode="date" value="{{deadlineDate}}" data-field="deadlineDate" bindchange="field"><view class="picker">{{deadlineDate}}</view></picker><picker mode="time" value="{{deadlineTime}}" data-field="deadlineTime" bindchange="field"><view class="picker">{{deadlineTime}}</view></picker></view>
  </view>
  <view class="card">
-  <view class="heading">预设参会名单</view><view class="muted">每行一人，默认必到。可选人员在行末加英文 ?，例如「李四 · 市场部?」。重名请加备注。发起人如参会，也须列入并认领。</view>
-  <textarea maxlength="1600" value="{{roster}}" data-field="roster" bindinput="field" placeholder="张三 · 产品部&#10;李四 · 市场部?"/>
+  <view class="heading">预设参会名单</view><view class="muted">每行一人，格式为「称呼：备注」，也可只填称呼。备注只在认领选项中显示，其他地方只显示称呼。默认必到，可选人员在行末加 ?。发起人如参会，也须列入。</view>
+  <textarea maxlength="8000" value="{{roster}}" data-field="roster" bindinput="field" placeholder="A：主持会议&#10;B：提供市场建议?"/>
  </view>
  <view class="card">
   <button bindtap="preview">生成并预览完整候选</button>
   <view class="muted">点击候选可移除／恢复。最多14个日期、80个候选、30位预设成员，为首版试用限制。</view>
   <view wx:for="{{slots}}" wx:key="id" class="slot {{item.keep ? '' : 'muted'}}" data-id="{{item.id}}" bindtap="toggleSlot">{{item.keep ? '✓' : '×'}} {{item.label}}</view>
  </view>
- <button class="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="publish">发布会议邀请</button>
+ <button class="primary" loading="{{busy}}" disabled="{{busy || publishedInvite}}" bindtap="publish">发布会议邀请</button>
+ <view wx:if="{{publishedInvite}}" class="publish-overlay" catchtap="ignoreEvent">
+  <view wx:if="{{!copySuccess}}" class="publish-dialog">
+   <view class="publish-title">会议已创建，邀请大家选时间</view>
+   <scroll-view class="invite-details" scroll-y="{{true}}">
+    <view class="invite-label">会议主题</view><view class="invite-topic">{{publishedInvite.title}}</view>
+    <view class="invite-label">备选时间 · 北京时间</view>
+    <view wx:for="{{publishedInvite.slots}}" wx:key="id" class="invite-slot">{{item.label}}</view>
+    <view class="invite-label">参与人</view><view class="invite-content">{{publishedInvite.participants}}</view>
+    <view class="invite-label">邀请协调时间的链接</view><text class="invite-path" selectable="{{true}}">{{publishedInvite.path}}</text>
+    <view class="invite-mock-note">本地模拟链接仅供本机测试，暂不能跨设备邀请。</view>
+   </scroll-view>
+   <view wx:if="{{copyError}}" class="invite-error">{{copyError}}</view>
+   <button class="primary invite-copy" catchtap="copyInvitation" loading="{{copying}}" disabled="{{copying}}">确认复制邀请链接</button>
+  </view>
+  <view wx:else class="publish-dialog copy-success-dialog">
+   <view class="copy-success-check">✓</view>
+   <view class="publish-title">邀请链接复制成功</view>
+   <view wx:if="{{!returnFailed}}" class="muted">即将返回首页</view>
+   <view wx:if="{{copyError}}" class="invite-error">{{copyError}}</view>
+   <button wx:if="{{returnFailed}}" class="primary invite-copy" catchtap="returnHome">返回首页</button>
+  </view>
+ </view>
 </view>

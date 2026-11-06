@@ -1,0 +1,19 @@
+.date-added[disabled] { background:#e7eaf0; color:#68758a; }
+
+.publish-overlay { position:fixed; top:0; bottom:0; left:0; right:0; z-index:100; display:flex; justify-content:center; align-items:center; background:rgba(20,32,52,.4); padding:32rpx; }
+.publish-dialog { width:100%; max-width:650rpx; max-height:90vh; box-sizing:border-box; border-radius:28rpx; padding:32rpx; background:#fff; }
+.publish-title { font-size:34rpx; font-weight:700; line-height:1.5; margin-bottom:20rpx; }
+.invite-details { height:50vh; }
+.invite-label { color:#68758a; font-size:24rpx; margin:24rpx 0 10rpx; }
+.invite-topic { font-size:32rpx; font-weight:600; overflow-wrap:break-word; }
+.invite-slot { font-size:28rpx; line-height:1.7; margin:8rpx 0; }
+.invite-content { font-size:28rpx; line-height:1.7; overflow-wrap:break-word; }
+.invite-path { display:block; background:#f4f6fa; padding:18rpx; border-radius:12rpx; font-size:24rpx; line-height:1.7; word-break:break-all; }
+.invite-mock-note { font-size:23rpx; color:#68758a; line-height:1.6; margin-top:16rpx; }
+.invite-error { font-size:24rpx; color:#a32424; line-height:1.6; margin-top:16rpx; }
+button.invite-copy { width:100%; font-size:28rpx; margin-top:24rpx; }
+.copy-success-dialog { text-align:center; padding:44rpx 32rpx; }
+.copy-success-check { font-size:48rpx; color:#217553; margin-bottom:20rpx; }
+
+/* Keep all three single-line fields readable without vertical padding clipping. */
+input { height:88rpx; min-height:88rpx; padding:0 20rpx; font-size:28rpx; line-height:normal; }

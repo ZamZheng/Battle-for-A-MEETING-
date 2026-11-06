@@ -2,13 +2,36 @@
   "description": "会议时间协调：本地模拟工程",
   "miniprogramRoot": "miniprogram/",
   "compileType": "miniprogram",
-  "appid": "touristappid",
-  "projectname": "meeting-battle",
+  "appid": "wx115ef0d47935cfe4",
+  "projectname": "meeting-avatar-A03",
   "setting": {
     "es6": true,
     "enhance": true,
     "minified": true,
-    "urlCheck": true
+    "urlCheck": true,
+    "postcss": false,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
   },
-  "libVersion": "latest"
+  "libVersion": "3.17.5",
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "editorSetting": {}
 }

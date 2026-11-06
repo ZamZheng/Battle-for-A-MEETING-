@@ -37,12 +37,12 @@ test('未回复不算可以：三必到一可选，不能锁定',()=>{
  assert.equal(D.summary(m)[0].missing,3);assert.equal(D.summary(m)[0].eligible,false);
  assert.throws(()=>D.apply(m,'owner',null,'lock',{slotId:m.slots[0].id,version:m.version},NOW),/必到/);
 });
-test('全员可以优先，其次满足必到并按可选可以数、时间排序',()=>{
+test('全员可以优先，无不行的可协调时段次之，冲突时段最后',()=>{
  let m=ready();
  const votes=choices(m,'no');votes[m.slots[2].id]='yes';votes[m.slots[1].id]='maybe';
  m=D.apply(m,'u3',null,'reply',{choices:votes},NOW);
  const results=D.summary(m);assert.equal(results[0].id,m.slots[2].id);assert.equal(results[0].allYes,true);
- assert.equal(results[1].id,m.slots[0].id);assert.equal(results[1].eligible,true);assert.equal(results[1].no,1);
+ assert.equal(results[1].id,m.slots[1].id);assert.equal(results[1].eligible,true);assert.equal(results[1].no,0);assert.equal(results[2].eligible,false);
 });
 test('可协调与不行分开；全部不行计为已回复',()=>{
  let m=reply(claim(meeting(),'a','r0'),'a','no');m=reply(claim(m,'b','r1'),'b','maybe');
@@ -112,4 +112,80 @@ test('新一轮无绑定、无旧回复，旧会保持不变',()=>{
 test('输入对象不会被失败或成功的操作就地修改',()=>{
  const m=meeting(),before=JSON.stringify(m);claim(m,'a','r0');assert.equal(JSON.stringify(m),before);
  assert.throws(()=>D.apply(m,'owner',null,'unknown',{},NOW));assert.equal(JSON.stringify(m),before);
+});
+test('头像模式无需手填姓名，角色标签由名单派生；未选择头像不能认领',()=>{
+ const m=meeting();assert.throws(()=>D.apply(m,'a','invite','claim',{roleId:'r0',profile:{nameSource:'role',avatar:''}},NOW),/头像/);
+ const claimed=D.apply(m,'a','invite','claim',{roleId:'r0',profile:{nameSource:'role',name:'不应采用的输入',avatar:'wxfile://saved/a.png'}},NOW);
+ assert.equal(claimed.members[0].profile.name,'甲');assert.equal(claimed.members[0].profile.nickname,'');assert.equal(claimed.members[0].profile.nameSource,'role');
+});
+test('发起人更正头像模式角色时，头像/回复保留，标签随角色更新；旁听不计票',()=>{
+ let m=D.apply(meeting(),'a','invite','claim',{roleId:'r0',profile:{nameSource:'role',avatar:'wxfile://saved/a.png'}},NOW);
+ m=reply(m,'a','yes');m=D.apply(m,'owner',null,'move',{targetActor:'a',roleId:'r1'},NOW);
+ assert.equal(m.members[0].profile.name,'乙');assert.equal(m.members[0].profile.avatar,'wxfile://saved/a.png');assert.equal(m.replies.a[m.slots[0].id],'yes');
+ m=D.apply(m,'owner',null,'move',{targetActor:'a',roleId:null},NOW);assert.equal(m.members[0].profile.name,'旁听者');assert.equal(D.summary(m)[0].yes,0);
+});
+test('名单按首个中/英文冒号拆称呼与备注，空白行忽略，可选标记保留',()=>{
+ const roles=D.parseRoster(' A：主持会议\r\n\r\n B : 提供建议：市场侧?\nC\nD：旁观？');
+ assert.deepEqual(roles,[{name:'A',note:'主持会议',required:true},{name:'B',note:'提供建议：市场侧',required:false},{name:'C',note:'',required:true},{name:'D',note:'旁观',required:false}]);
+ assert.equal(D.formatRoster(roles),'A：主持会议\nB：提供建议：市场侧?\nC\nD：旁观?');
+});
+test('拆分后校验称呼/备注长度和重复称呼，不能用不同备注绕过重名检查',()=>{
+ assert.throws(()=>D.parseRoster('：只有备注'),/称呼/);
+ assert.throws(()=>D.parseRoster('A：'+'长'.repeat(201)),/备注/);
+ assert.throws(()=>D.parseRoster('长'.repeat(41)+'：备注'),/称呼/);
+ assert.throws(()=>meeting({roster:D.parseRoster('A：主持\nA：汇报')}),/重名/);
+});
+test('会议汇总、缺口、认领资料只显示短称呼，备注独立保留用于认领选项',()=>{
+ let m=meeting({roster:D.parseRoster('A：主持会议\nB:提供意见')});
+ assert.equal(m.roles[0].name,'A');assert.equal(m.roles[0].note,'主持会议');
+ m=D.apply(m,'a','invite','claim',{roleId:'r0',profile:{nameSource:'role',avatar:'wxfile://saved/a.png'}},NOW);
+ const v=D.view(m,'owner',null,NOW);
+ assert.deepEqual(v.missing,['A','B']);assert.equal(v.slots[0].details[0].name,'A');assert.equal(v.slots[0].blockers[0].name,'A');assert.equal(m.members[0].profile.name,'A');
+ assert.equal(v.roles[0].note,'主持会议');
+});
+test('所有名单成员已回复且均为可以或可协调能锁定，含可选的不行票也拒绝',()=>{
+ let m=ready();m=reply(m,'u0','maybe');m=reply(m,'u3','maybe');
+ const conflict=reply(m,'u3','no');assert.equal(D.summary(conflict)[0].eligible,false);
+ const s=D.summary(m)[0];assert.equal(s.eligible,true);assert.deepEqual(s.requiredMaybeNames,['甲']);assert.equal(s.no,0);
+ m=D.apply(m,'owner',null,'lock',{slotId:s.id,version:m.version},NOW);assert.equal(m.status,'locked');
+});
+test('新锁定规则：可选未回复仍需等待，必到不行不能锁定，旁听不参与',()=>{
+ let m=meeting();for(let i=0;i<3;i++){m=claim(m,'u'+i,'r'+i);m=reply(m,'u'+i,'maybe');}
+ let s=D.summary(m)[0];assert.equal(s.eligible,false);assert.throws(()=>D.apply(m,'owner',null,'lock',{slotId:s.id,version:m.version},NOW),/全部提交/);
+ m=reply(claim(m,'u3','r3'),'u3','maybe');m=claim(m,'observer',null);s=D.summary(m)[0];assert.equal(s.eligible,true);
+ m=reply(m,'u0','no');s=D.summary(m)[0];assert.equal(s.eligible,false);assert.throws(()=>D.apply(m,'owner',null,'lock',{slotId:s.id,version:m.version},NOW),/必到/);
+});
+test('网络会议链接仅发起人可在锁定后保存，支持修改清空且不改变最终时间和回复',()=>{
+ let m=ready();assert.throws(()=>D.apply(m,'owner',null,'meetingLink',{url:'https://meeting.example.com/a'},NOW),/已锁定/);
+ m=D.apply(m,'owner',null,'lock',{slotId:m.slots[0].id,version:m.version},NOW);
+ const slot=m.finalSlot,replies=JSON.stringify(m.replies);assert.throws(()=>D.apply(m,'u0',null,'meetingLink',{url:'https://meeting.example.com/a'},NOW),/仅发起人/);
+ m=D.apply(m,'owner',null,'meetingLink',{url:' https://meeting.example.com/a?pwd=123 '},NOW);assert.equal(D.view(m,'u0',null,NOW).meetingLink,'https://meeting.example.com/a?pwd=123');
+ m=D.apply(m,'owner',null,'meetingLink',{url:'https://meeting.example.com/b'},NOW);assert.equal(m.meetingLink,'https://meeting.example.com/b');
+ m=D.apply(m,'owner',null,'meetingLink',{url:''},NOW);assert.equal(m.meetingLink,'');assert.equal(m.finalSlot,slot);assert.equal(JSON.stringify(m.replies),replies);
+ m=D.apply(m,'owner',null,'cancel',{},NOW);assert.throws(()=>D.apply(m,'owner',null,'meetingLink',{url:'https://meeting.example.com/c'},NOW),/已锁定/);
+});
+test('链接拒绝脚本协议、整段文字、空主机、嵌入账号和超长值，旧会议无链接兼容',()=>{
+ let m=ready();m=D.apply(m,'owner',null,'lock',{slotId:m.slots[0].id,version:m.version},NOW);delete m.meetingLink;
+ assert.equal(D.view(m,'owner',null,NOW).meetingLink,'');
+ for(const url of ['javascript:alert(1)','请访问 https://meeting.example.com','https://','https://user:pass@meeting.example.com','https://meeting.example.com/'+'a'.repeat(2048)])assert.throws(()=>D.apply(m,'owner',null,'meetingLink',{url},NOW),/会议链接/);
+ assert.equal(m.meetingLink,undefined);
+});
+function novemberMeetingSnapshot(){
+ const now=D.dateTime('2026-11-07','04:20');
+ const spec={title:'截图会议',purpose:'旧会复现',dates:['2026-11-08'],from:'09:00',to:'12:00',duration:60,interval:30,deadline:D.dateTime('2026-11-08','08:00'),roster:['H','B','K'].map(name=>({name,required:true}))};
+ spec.excluded=D.generateSlots(spec,now).filter(s=>['10:00','10:30'].includes(D.labelTime(s.start).slice(11))).map(s=>s.id);
+ let m=D.create(spec,'owner','fixed-meeting','fixed-invite',now);const votes=[['maybe','no','yes'],['maybe','yes','yes'],['maybe','maybe','maybe']],slots=m.slots;
+ ['h','b','k'].forEach((actor,i)=>{m=D.apply(m,actor,'fixed-invite','claim',{roleId:'r'+i,profile:{name:actor}},now);m=D.apply(m,actor,'fixed-invite','reply',{choices:Object.fromEntries(slots.map((s,j)=>[s.id,votes[i][j]]))},now);});
+ m=D.apply(m,'owner',null,'claim',{roleId:null,profile:{name:'旁听'}},now);return {m,now};
+}
+test('11月7日04:20核对11月8日旧会：统一评估返回9点与11点，不受旧eligible缓存影响',()=>{
+ const {m,now}=novemberMeetingSnapshot();m.slots.forEach(s=>{s.eligible=false;});
+ const v=D.view(m,'owner',null,now);assert.equal(v.lockState.submitted,3);assert.equal(v.lockState.allResponded,true);assert.equal(v.lockState.emptyReason,'');
+ const times=v.slots.filter(s=>v.lockState.candidateIds.includes(s.id)).map(s=>D.labelTime(s.start).slice(11));assert.deepEqual(times,['09:00','11:00']);
+ const locked=D.apply(m,'owner',null,'lock',{slotId:v.lockState.candidateIds[0],version:m.version},now);assert.equal(locked.status,'locked');
+});
+test('候选确实过期时给出准确原因和评估时刻，不用冲突票误导',()=>{
+ const {m}=novemberMeetingSnapshot(),now=D.dateTime('2026-11-08','12:01');
+ const v=D.view(m,'owner',null,now);assert.equal(v.lockState.candidateIds.length,0);assert.match(v.lockState.emptyReason,/已过开始时间/);assert.equal(v.lockState.evaluatedAt,now);
+ assert.deepEqual(v.lockState.decisions.map(s=>s.reason),['past','past','conflict']);
 });

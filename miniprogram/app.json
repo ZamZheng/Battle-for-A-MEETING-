@@ -2,7 +2,8 @@
   "pages": [
     "pages/home/home",
     "pages/create/create",
-    "pages/meeting/meeting"
+    "pages/meeting/meeting",
+    "pages/identity/identity"
   ],
   "window": {
     "navigationBarTitleText": "会议时间协调",

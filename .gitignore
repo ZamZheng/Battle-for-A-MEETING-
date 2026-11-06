@@ -3,3 +3,5 @@ project.private.config.json
 miniprogram/config.local.js
 artifacts/
 .DS_Store
+__MACOSX/
+._*

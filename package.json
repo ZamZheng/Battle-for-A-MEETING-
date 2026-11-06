@@ -1,6 +1,6 @@
 {
   "name": "meeting-battle",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "原生微信小程序：多人会议时间协调，本地模拟里程碑",
   "scripts": {

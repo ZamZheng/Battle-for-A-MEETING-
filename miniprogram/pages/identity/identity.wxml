@@ -1,0 +1,23 @@
+<view class="container identity-page">
+ <view class="identity-title">认领你的角色</view>
+ <view wx:if="{{error}}" class="error">{{error}}</view>
+ <block wx:if="{{meeting}}">
+  <block wx:if="{{editable}}">
+   <view class="avatar-section">
+    <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="chooseAvatar" disabled="{{busy || savingAvatar}}" loading="{{savingAvatar}}" aria-label="选择头像">
+     <image wx:if="{{avatar}}" class="identity-avatar" src="{{avatar}}" mode="aspectFill"/>
+     <view wx:else class="avatar-placeholder">选头像</view>
+    </button>
+    <view class="avatar-caption">{{avatar ? '点击可更换头像' : '先选头像，再选角色'}}</view>
+   </view>
+   <view class="roles-title">选择你的角色</view>
+   <view class="role-list">
+    <view wx:for="{{roles}}" wx:key="key" class="role-option {{roleIndex === index ? 'role-selected' : ''}} {{item.unavailable ? 'role-unavailable' : ''}}" data-index="{{index}}" bindtap="selectRole" aria-role="button" aria-label="{{item.name + '，' + (item.unavailable ? '已被认领' : item.label)}}">
+     <view class="role-main"><view class="role-name">{{item.name}}</view><view wx:if="{{item.note}}" class="role-note">{{item.note}}</view><view class="role-kind">{{item.unavailable ? '已被认领' : item.label}}</view></view>
+     <view class="role-arrow">{{item.unavailable ? '—' : '›'}}</view>
+    </view>
+   </view>
+  </block>
+  <view wx:else class="notice">{{meeting.status === 'closed' ? '会议已截止，暂不能认领或修改角色。' : meeting.status === 'locked' ? '会议已锁定，暂不能认领或修改角色。' : '会议已取消，不能认领角色。'}}</view>
+ </block>
+</view>

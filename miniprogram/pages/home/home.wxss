@@ -1,0 +1,9 @@
+.slot.meeting-highlight { background:#eef5ff; border:2rpx solid #adc8ed; }
+.meeting-highlight-label { color:#416caa; font-size:24rpx; margin-bottom:12rpx; }
+
+/* Explicit height avoids the native input's default height being consumed by global vertical padding. */
+input { height:88rpx; min-height:88rpx; padding:0 20rpx; font-size:28rpx; line-height:normal; }
+
+.meeting-list-heading { display:flex; align-items:flex-start; gap:16rpx; }
+.meeting-list-title { flex:1; min-width:0; overflow-wrap:break-word; }
+.meeting-owner-badge { flex-shrink:0; color:#3157ad; background:#eaf0ff; border-radius:10rpx; padding:5rpx 12rpx; font-size:22rpx; line-height:1.5; }

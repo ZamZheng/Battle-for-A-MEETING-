@@ -1,61 +1,86 @@
 <view class="container">
  <view class="notice">本地模拟 · 仅本机保存，不是真实微信身份、云端共享或通知服务。</view>
- <picker range="{{identities}}" range-key="name" value="{{actorIndex}}" bindchange="switchActor"><view class="picker">{{identities[actorIndex].name}} · 切换测试身份 ▾</view></picker>
+ <picker disabled="{{busy || submitPending || noticeCopying}}" range="{{identities}}" range-key="name" value="{{actorIndex}}" bindchange="switchActor"><view class="picker">{{identities[actorIndex].name}} · 切换测试身份 ▾</view></picker>
  <view wx:if="{{error}}" class="error">{{error}}</view>
- <button bindtap="refresh">刷新共享结果（会丢弃未提交选择）</button>
+ <button disabled="{{submitPending}}" bindtap="refresh">刷新共享结果（会丢弃未提交选择）</button>
  <block wx:if="{{meeting}}">
+  <view class="coordination-step">第 2 步 / 共 2 步 · 时间协调</view>
   <view class="title">{{meeting.title}}</view>
   <view class="card">
    <view>{{meeting.purpose}}</view><view class="divider"></view>
    <view class="muted">预计日期：{{datesText}}</view><view class="muted">时长 {{meeting.duration}} 分钟 · 北京时间</view>
    <view class="muted">回复截止：{{deadline}}</view>
    <view class="badge">{{meeting.status === 'closed' ? '已截止 · 待确认' : meeting.status === 'locked' ? '已锁定' : meeting.status === 'cancelled' ? '已取消' : '收集中'}}</view>
-   <view class="muted">最后刷新数据：{{updated}} · 版本 {{meeting.version}}</view>
-   <view wx:if="{{meeting.self}}" class="muted">我的身份：{{roleName}} · {{meeting.self.profile.name}}</view>
-   <button wx:if="{{editable}}" bindtap="beginClaim">{{meeting.self ? '认领错了／修改个人信息' : '填写工作姓名并认领身份'}}</button>
+   <view wx:if="{{meeting.isOwner}}" class="muted">最后刷新数据：{{updated}} · 版本 {{meeting.version}}</view>
+   <view wx:if="{{meeting.self}}" class="row current-role"><image wx:if="{{meeting.self.profile.avatar}}" class="avatar" src="{{meeting.self.profile.avatar}}" mode="aspectFill"/><view class="muted">我的角色：{{roleName}}</view></view>
+   <button wx:if="{{editable}}" bindtap="beginClaim">{{meeting.self ? '修改我的身份' : '我也参会：确认身份'}}</button>
   </view>
-  <view wx:if="{{profileReady}}" class="card">
-   <view class="heading">确认你的会议角色</view><view class="muted">必到角色优先展示；认领后立即生效，无需审批。一个模拟账号只能绑定一个身份。</view>
-   <picker range="{{meeting.roles}}" range-key="label" value="{{roleIndex}}" bindchange="roleChange"><view class="picker">{{meeting.roles[roleIndex].label}} ▾</view></picker>
-   <button class="primary" bindtap="claim" disabled="{{busy}}">认领所选角色</button>
-   <button data-observer="yes" bindtap="claim" disabled="{{busy}}">我不在名单中，仅接收会议信息</button>
-  </view>
-  <view wx:if="{{meeting.status === 'locked'}}" class="card">
-   <view class="heading">最终安排</view><view>{{final.label}}（北京时间）</view><button class="primary" bindtap="copyNotice">复制会议通知</button>
+  <view wx:if="{{meeting.status === 'locked'}}" class="card" id="final-arrangement">
+   <view class="heading">最终安排</view><view>{{final.label}}（北京时间）</view>
+   <view class="label">网络会议链接</view>
+   <block wx:if="{{meeting.isOwner}}">
+    <input class="meeting-link-input" maxlength="-1" value="{{meetingLinkInput}}" bindinput="meetingLinkChanged" disabled="{{noticeCopying}}" placeholder="粘贴网络会议链接（选填）"/>
+    <view class="muted">复制通知时会一并保存链接。</view>
+   </block>
+   <block wx:else>
+    <text wx:if="{{meeting.meetingLink}}" class="meeting-link-text" selectable="{{true}}">{{meeting.meetingLink}}</text>
+    <view wx:else class="muted">发起人尚未添加网络会议链接。</view>
+   </block>
+   <view wx:if="{{noticeError}}" class="notice-copy-error">{{noticeError}}</view>
+   <button class="primary" bindtap="copyNotice" loading="{{noticeCopying}}" disabled="{{noticeCopying}}">复制会议通知</button>
    <view class="muted">仅接收信息的参与者可在这里查看。当前不会主动推送微信消息。</view>
   </view>
   <view wx:if="{{meeting.status === 'cancelled'}}" class="notice">会议已取消，请勿按原安排参加。</view>
-  <view class="card">
-   <view class="heading">大家的选择 · 热力图</view>
-   <view>已回复 {{meeting.submitted}} / {{meeting.total}} · 仅接收信息 {{meeting.observers}} 人</view>
-   <view class="muted">未回复：{{missingText || '无'}}</view>
-   <view wx:if="{{noIntersection}}" class="notice">暂未找到必到人员都可以的时段。</view>
+  <view class="card {{meeting.isOwner ? '' : 'participant-card'}}">
+   <view wx:if="{{showVotePrompt}}" class="participant-prompt">
+    <view class="participant-prompt-title">还未提交，请下滑选择时间并提交</view>
+   </view>
+   <block wx:if="{{meeting.isOwner}}">
+    <view class="owner-heatmap-heading"><view class="heading">大家的选择 · 热力图</view><button wx:if="{{canOpenLockPicker}}" class="primary lock-trigger" bindtap="openLockPicker" disabled="{{busy || lockPending}}">锁定时间</button></view>
+    <view>已回复 {{meeting.submitted}} / {{meeting.total}} · 旁听者 {{meeting.observers}} 人</view>
+    <view class="muted">未回复：{{missingText || '无'}}</view>
+    <view wx:if="{{!lockRuleReady}}" class="notice">锁定规则尚未更新完成，请更新本次补丁后重新编译。</view>
+    <view wx:elif="{{!allResponded}}" class="notice">等待名单成员全部提交后确认时间。</view>
+   </block>
+   <view wx:if="{{!meeting.isOwner}}" class="muted heatmap-reference">{{hasSubmitted ? '以下是目前的选择情况，供你参考。' : '以下是其他人的选择，仅供参考。'}}</view>
    <view class="heatmap">
-    <view wx:for="{{slots}}" wx:key="id" class="heatcell {{item.heatClass}}">
+    <view wx:for="{{slots}}" wx:key="id" class="heatcell {{item.heatClass}}" style="{{item.heatStyle}}">
      <view class="slot-date">{{item.heatDate}}</view><view class="heat-time">{{item.heatTime}}</view>
-     <view class="small">可以 {{item.yes}} / {{meeting.total}}</view><view class="small">可协调 {{item.maybe}} · 不行 {{item.no}}</view>
+     <view class="small">可以 {{item.yes}} / {{meeting.total}}</view>
+     <view wx:if="{{meeting.isOwner}}" class="heat-breakdown">
+      <view>可协调 {{item.maybe}}{{item.maybeNames ? '：' + item.maybeNames : ''}}</view>
+      <view>不行 {{item.no}}{{item.noNames ? '：' + item.noNames : ''}}</view>
+     </view>
+     <view wx:else class="small">可协调 {{item.maybe}} · 不行 {{item.no}}</view>
     </view>
    </view>
-   <view wx:if="{{canVote}}">
-    <view class="muted">先参考汇总，再选择自己可以参加的时间。下面的选择提交后才共享。</view>
-    <view class="row"><button size="mini" wx:for="{{states}}" wx:key="id" data-choice="{{item.id}}" bindtap="batch">全部{{item.label}}</button></view>
+   <view wx:if="{{canVote}}" id="vote-options">
+    <view class="muted">{{editingVote ? '修改你的时间选择，完成后保存修改。' : '选择你可以参加的时间，完成后点击提交。'}}</view>
+    <view class="row"><button class="batch-choice batch-{{item.id}}" disabled="{{submitPending}}" size="mini" wx:for="{{states}}" wx:key="id" data-choice="{{item.id}}" bindtap="batch">全部{{item.label}}</button></view>
    </view>
    <view wx:for="{{slots}}" wx:key="id" wx:for-item="slot" class="slot">
     <view class="slot-date">{{slot.heatDate}}</view>
     <view class="slot-time">{{slot.heatTime}}</view>
-    <view class="bar"><view class="yes" style="width:{{slot.yesWidth}}%"></view><view class="maybe" style="width:{{slot.maybeWidth}}%"></view><view class="no" style="width:{{slot.noWidth}}%"></view></view>
-    <view class="badge" wx:if="{{slot.allYes}}">全员明确可以</view><view class="badge" wx:elif="{{slot.eligible}}">必到人员明确可以</view>
+    <view class="bar"><view class="yes" style="{{slot.yesStyle}}"></view><view class="maybe" style="{{slot.maybeStyle}}"></view><view class="no" style="{{slot.noStyle}}"></view></view>
+    <view class="badge" wx:if="{{slot.allYes}}">全员明确可以</view><view class="badge" wx:elif="{{slot.eligible}}">{{slot.requiredMaybeNames.length ? '可锁定 · 含可协调' : '可锁定'}}</view>
     <view wx:if="{{canVote}}" class="row">
      <view wx:for="{{states}}" wx:for-item="state" wx:key="id" class="choice {{state.id}} {{slot.choice === state.id ? 'selected' : ''}}" data-slot="{{slot.id}}" data-choice="{{state.id}}" bindtap="pick">{{state.label}}</view>
     </view>
-    <button wx:if="{{meeting.isOwner && slot.eligible && (meeting.status === 'collecting' || meeting.status === 'closed')}}" data-id="{{slot.id}}" class="primary" bindtap="lock" disabled="{{busy}}">锁定此时段</button>
+    <view wx:if="{{hasSubmitted && isVoter && !canVote}}" class="saved-slot-choice">你的选择：{{slot.choice === 'yes' ? '可以' : slot.choice === 'maybe' ? '可协调' : slot.choice === 'no' ? '不行' : '未填写'}}</view>
    </view>
-   <button wx:if="{{canVote}}" class="primary" bindtap="submit" loading="{{busy}}" disabled="{{busy}}">提交我的全部选择</button>
-   <view wx:if="{{canVote}}" class="muted">未点击提交的选择不会进入汇总，刷新或退出将丢弃。</view>
+   <view wx:if="{{hasSubmitted && isVoter && !canVote}}" class="submitted-actions">
+    <button class="submitted-confirmation" disabled="{{true}}">你已提交时间</button>
+    <button class="primary edit-time-button" bindtap="beginEditTime" disabled="{{!editable || busy || submitPending}}">修改时间判断</button>
+   </view>
+   <view wx:if="{{canVote}}" class="vote-edit-actions">
+    <button wx:if="{{editingVote}}" bindtap="cancelEditTime" disabled="{{busy || submitPending}}">取消修改</button>
+    <button class="primary" bindtap="submit" loading="{{busy}}" disabled="{{busy || submitPending}}">{{editingVote ? '保存修改' : '提交我的全部选择'}}</button>
+   </view>
+   <view wx:if="{{canVote}}" class="muted">未点击{{editingVote ? '保存修改' : '提交'}}的选择不会进入汇总，刷新或退出将丢弃。</view>
   </view>
   <view wx:if="{{meeting.isOwner}}" class="card">
    <view class="heading">发起人工具</view>
-   <block wx:if="{{meeting.inviteActive}}"><button bindtap="copyInvite">复制本机模拟邀请路径</button><button bindtap="revoke" disabled="{{busy}}">撤销邀请</button></block>
+   <block wx:if="{{meeting.inviteActive}}"><button class="owner-invite-button" bindtap="copyInvite">复制本机模拟邀请路径</button><button bindtap="revoke" disabled="{{busy}}">撤销邀请</button></block>
    <view wx:else class="muted">邀请已撤销；已加入成员仍可访问。</view>
    <block wx:if="{{meeting.status === 'collecting' || meeting.status === 'closed'}}">
     <view class="label">延长回复截止</view>
@@ -63,26 +88,52 @@
     <button bindtap="extend" disabled="{{busy}}">延长并重新开放</button>
    </block>
    <block wx:if="{{editable && managed.length}}">
-    <view class="divider"></view><view class="label">协助更正身份（模拟账号标识可见）</view>
-    <picker range="{{managed}}" range-key="label" value="{{memberIndex}}" bindchange="memberChange"><view class="picker">{{managed[memberIndex].label}}</view></picker>
-    <view wx:if="{{managed[memberIndex].profile.avatar}}"><image class="avatar" src="{{managed[memberIndex].profile.avatar}}"/></view>
-    <view class="muted">昵称：{{managed[memberIndex].profile.nickname || '未填写'}}</view>
-    <picker range="{{moveRoles}}" range-key="label" value="{{moveIndex}}" bindchange="moveChange"><view class="picker">更正为：{{moveRoles[moveIndex].label}}</view></picker>
-    <button bindtap="move" disabled="{{busy}}">迁移身份与选择</button>
+    <view class="divider"></view><view class="label">协助更正身份</view>
+    <scroll-view class="correction-list" style="{{correctionListStyle}}" scroll-y="{{true}}" show-scrollbar="{{true}}">
+     <view wx:for="{{managed}}" wx:key="actor" class="correction-row">
+      <view class="correction-person">
+       <text class="correction-name">{{item.label}}</text>
+       <image wx:if="{{item.profile.avatar}}" class="correction-avatar" src="{{item.profile.avatar}}" mode="aspectFill"/>
+       <view wx:else class="correction-avatar correction-avatar-empty">头像</view>
+      </view>
+      <view class="correction-arrow">→</view>
+      <picker class="correction-target" range="{{moveRoles}}" range-key="label" value="{{item.targetIndex}}" data-actor="{{item.actor}}" disabled="{{busy || moveConfirming}}" bindchange="moveChange">
+       <view class="correction-target-value">{{item.targetLabel}} ▾</view>
+      </picker>
+      <button class="correction-confirm" data-actor="{{item.actor}}" disabled="{{!item.canMove || busy || moveConfirming}}" bindtap="move">确认更正</button>
+     </view>
+    </scroll-view>
+    <view wx:if="{{hasMoreCorrections}}" class="muted correction-scroll-hint">上下滑动，查看其他成员</view>
    </block>
-   <button bindtap="newRound">复制主题与名单，开启新一轮</button>
+   <button class="owner-round-button" bindtap="newRound"><view>复制主题与名单</view><view>开启新一轮</view></button>
    <view class="muted">新一轮须重新设置日期、重新认领和填写。旧会议保留历史，不自动取消。</view>
    <button wx:if="{{meeting.status !== 'cancelled'}}" class="danger" bindtap="cancel" disabled="{{busy}}">取消此会议</button>
   </view>
  </block>
- <view wx:if="{{profileOpen}}" class="overlay">
-  <view class="dialog card">
-   <view class="heading">先让大家认识你</view><view class="muted">工作姓名必填；头像、昵称自愿提供，不读取你的微信号。</view>
-   <input maxlength="40" value="{{name}}" data-field="name" bindinput="profileField" placeholder="工作姓名（必填）"/>
-   <input maxlength="40" value="{{nickname}}" data-field="nickname" bindinput="profileField" placeholder="昵称（自愿填写）"/>
-   <button open-type="chooseAvatar" bindchooseavatar="chooseAvatar">{{avatar ? '重新选择头像' : '自愿选择头像'}}</button><image wx:if="{{avatar}}" class="avatar" src="{{avatar}}"/>
-   <view wx:if="{{error}}" class="error">{{error}}</view>
-   <button class="primary" bindtap="confirmProfile">下一步：确认会议角色</button><button bindtap="closeProfile">暂不认领</button>
+ <view wx:if="{{lockPickerOpen}}" class="lock-picker-overlay" catchtap="ignoreEvent">
+  <view class="lock-picker-dialog">
+   <view class="heading">选择会议时间</view>
+   <view class="muted">请选择一个时间，选定后即锁定。仅列出没有人选“不行”的候选时段。</view>
+   <scroll-view wx:if="{{lockOptions.length}}" class="lock-options" style="{{lockListStyle}}" scroll-y="{{true}}">
+    <button wx:for="{{lockOptions}}" wx:key="id" class="lock-option" data-id="{{item.id}}" catchtap="lock" disabled="{{lockPending}}">{{item.label}}</button>
+   </scroll-view>
+   <view wx:else class="notice lock-empty">
+    <view>{{lockEmptyReason || '请刷新可选时间后重试。'}}</view>
+    <view class="small">设备时间（北京时间）：{{lockCheckedTime}}</view>
+    <button size="mini" catchtap="copyLockDiagnostics">复制排查信息</button>
+   </view>
+   <view wx:if="{{lockPickerError}}" class="lock-picker-error">{{lockPickerError}}</view>
+   <button wx:if="{{lockPickerError}}" bindtap="openLockPicker" disabled="{{lockPending}}">刷新可选时间</button>
+   <button bindtap="closeLockPicker" disabled="{{lockPending}}">取消</button>
+  </view>
+ </view>
+ <view wx:if="{{submissionSuccess}}" class="submission-overlay" catchtouchmove="ignoreEvent" catchtap="ignoreEvent">
+  <view class="submission-message">
+   <view class="submission-check">✓</view>
+   <view class="submission-title">谢谢你的选择</view>
+   <view class="submission-text">已为你保存。后续可在“我的会议”查看进展。</view>
+   <view wx:if="{{returnError}}" class="submission-error">{{returnError}}</view>
+   <button class="primary submission-ok" catchtap="confirmSubmission" loading="{{returningHome}}" disabled="{{returningHome}}">OK</button>
   </view>
  </view>
 </view>

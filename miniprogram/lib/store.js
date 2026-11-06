@@ -30,10 +30,18 @@ function create(input) {
   return { id, token };
 }
 function list() {
-  return Object.values(read().meetings).filter(m => m.owner === actor() || m.members.some(p => p.actor === actor()))
-    .sort((a,b)=>b.updatedAt-a.updatedAt).map(m => ({ id:m.id, title:m.title, status:m.status, updatedAt:D.labelTime(m.updatedAt) }));
+  const current=actor();
+  return Object.values(read().meetings).filter(m => m.owner === current || m.members.some(p => p.actor === current))
+    .sort((a,b)=>b.updatedAt-a.updatedAt).map(m => ({ id:m.id, title:m.title, status:m.status, updatedAt:D.labelTime(m.updatedAt),isOwner:m.owner===current }));
+}
+// Mock test utility only: carry an active invitation between simulated users.
+// It requires a currently authorized context and does not revive revoked invites.
+function simulationInvite(id,token) {
+  const meeting=get(id);
+  D.authorize(meeting,actor(),token);
+  return meeting.inviteActive ? meeting.token : '';
 }
 function view(id,token) { return D.view(get(id), actor(),token); }
 function act(id,token,action,payload) { save(D.apply(get(id),actor(),token,action,payload)); return view(id,token); }
 function reset() { wx.removeStorageSync(KEY); }
-module.exports = { identities, actor, setActor, create, list, view, act, reset };
+module.exports = { identities, actor, setActor, create, list, view, act, reset, simulationInvite };
