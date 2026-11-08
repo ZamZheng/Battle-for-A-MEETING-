@@ -12,6 +12,8 @@
 .coordination-step { color:#536582; font-size:24rpx; margin:24rpx 0 12rpx; }
 
 .current-role { margin-top:20rpx; }
+.meeting-info-actions { display:flex; gap:16rpx; margin-top:18rpx; }
+.meeting-info-actions button { flex:1; min-width:0; margin:0; padding:12rpx; font-size:26rpx; line-height:1.6; }
 
 .participant-card .heatmap { margin-top:0; }
 button.batch-choice { font-weight:600; }
@@ -66,7 +68,24 @@ input.meeting-link-input { height:88rpx; min-height:88rpx; padding:0 20rpx; font
 button.lock-trigger { flex-shrink:0; width:160rpx; padding:0 12rpx; margin:0; font-size:26rpx; line-height:72rpx; }
 .lock-picker-overlay { position:fixed; top:0; bottom:0; left:0; right:0; z-index:110; display:flex; align-items:center; justify-content:center; background:rgba(20,32,52,.4); padding:32rpx; }
 .lock-picker-dialog { width:100%; max-width:650rpx; box-sizing:border-box; border-radius:28rpx; padding:32rpx; background:#fff; }
-.lock-options { margin:24rpx 0; }
+.lock-options { margin:24rpx 0; max-height:45vh; }
 button.lock-option { box-sizing:border-box; width:100%; min-height:96rpx; padding:20rpx 12rpx; line-height:1.6; font-size:28rpx; background:#edf3ff; color:#244c9e; margin:0 0 16rpx; }
 .lock-empty { margin-top:24rpx; }
 .lock-picker-error { color:#a32424; font-size:25rpx; line-height:1.6; margin-top:16rpx; }
+
+.proposal-overlay { z-index:120; }
+.proposal-dialog { width:100%; max-width:650rpx; box-sizing:border-box; padding:32rpx; border-radius:28rpx; background:#fff; max-height:90vh; overflow-y:auto; }
+.proposal-duration-row { display:flex; align-items:baseline; flex-wrap:wrap; gap:12rpx; margin:4rpx 0 14rpx; }
+.proposal-duration { color:#162339; font-size:30rpx; font-weight:700; line-height:1.5; }
+.proposal-pickers { flex-wrap:wrap; margin:16rpx 0; }
+.proposal-pickers date-time-picker { flex:1 1 260rpx; min-width:0; }
+.proposal-range { color:#244c9e; font-size:26rpx; line-height:1.7; margin:16rpx 0; overflow-wrap:break-word; }
+.slot-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8rpx; margin-bottom:6rpx; }
+.slot-header .slot-date { flex-shrink:1; margin-bottom:0; }
+.heatcell .slot-header .slot-date { font-size:22rpx; }
+.slot-header .proposal-badge { flex-shrink:1; min-width:0; font-size:20rpx; line-height:1.4; padding:4rpx 8rpx; margin:0 0 0 auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.supplement-owner-note { color:#68758a; font-size:25rpx; line-height:1.7; overflow-wrap:break-word; }
+
+.final-time { font-size:28rpx; line-height:1.5; overflow-wrap:break-word; }
+.lock-picker-dialog { max-height:90vh; overflow-y:auto; }
+.row date-time-picker { flex:1 1 240rpx; min-width:0; }

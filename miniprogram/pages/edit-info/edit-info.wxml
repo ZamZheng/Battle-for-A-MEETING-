@@ -1,0 +1,36 @@
+<view class="container">
+ <view class="title">修改会议信息</view>
+ <view wx:if="{{error && !errorField}}" class="error">{{error}}</view>
+ <block wx:if="{{loaded && !saved}}">
+  <view class="card">
+   <view id="edit-title" class="edit-field {{errorField === 'title' ? 'invalid' : ''}}">
+    <view class="label">会议主题</view><input maxlength="100" value="{{title}}" data-field="title" bindfocus="clearIssue" bindinput="field" disabled="{{busy || !editable}}"/>
+    <view wx:if="{{errorField === 'title'}}" class="field-error">{{error}}</view>
+   </view>
+   <view id="edit-purpose" class="edit-field {{errorField === 'purpose' ? 'invalid' : ''}}">
+    <view class="label">会议目的</view><textarea maxlength="1000" value="{{purpose}}" data-field="purpose" bindfocus="clearIssue" bindinput="field" disabled="{{busy || !editable}}"/>
+    <view wx:if="{{errorField === 'purpose'}}" class="field-error">{{error}}</view>
+   </view>
+  </view>
+  <view class="card edit-field {{errorField === 'roster' ? 'invalid' : ''}}" id="edit-roster">
+   <view class="heading">预设参会名单</view>
+   <view class="muted"><view>一行代表一位成员。</view><view>格式：成员称呼 + 备注信息（部门、职称、项目中的功能身份等）。</view></view>
+   <view wx:for="{{rows}}" wx:key="key" class="member-row">
+    <view class="member-inputs">
+     <input class="member-name" maxlength="40" value="{{item.name}}" placeholder="成员" data-key="{{item.key}}" data-field="name" data-group="roster" bindfocus="clearIssue" bindinput="rosterField" disabled="{{busy || !editable}}"/>
+     <input class="member-note" maxlength="200" value="{{item.note}}" placeholder="备注信息" data-key="{{item.key}}" data-field="note" data-group="roster" bindfocus="clearIssue" bindinput="rosterField" disabled="{{busy || !editable}}"/>
+    </view>
+    <view class="member-actions">
+     <picker range="{{kinds}}" value="{{item.required ? 0 : 1}}" data-key="{{item.key}}" data-field="required" data-group="roster" bindtap="clearIssue" bindchange="rosterField" disabled="{{busy || !editable}}"><view class="member-kind">{{item.required ? '必到' : '可选'}} ▾</view></picker>
+     <button size="mini" data-key="{{item.key}}" data-direction="-1" bindtap="moveMember" disabled="{{busy || !editable || index === 0}}">上移</button>
+     <button size="mini" data-key="{{item.key}}" data-direction="1" bindtap="moveMember" disabled="{{busy || !editable || index === rows.length - 1}}">下移</button>
+     <button size="mini" class="danger" data-key="{{item.key}}" bindtap="removeMember" disabled="{{busy || !editable}}">删除</button>
+    </view>
+   </view>
+   <view wx:if="{{errorField === 'roster'}}" class="field-error">{{error}}</view>
+   <button bindtap="addMember" disabled="{{busy || !editable}}">添加成员</button>
+  </view>
+  <view class="edit-actions"><button bindtap="cancel" disabled="{{busy}}">取消</button><button class="primary" bindtap="save" loading="{{busy}}" disabled="{{busy || !editable}}">保存修改</button></view>
+ </block>
+ <button wx:if="{{!loaded || saved}}" bindtap="cancel">{{saved ? '返回会议' : '返回'}}</button>
+</view>

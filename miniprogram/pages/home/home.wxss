@@ -7,3 +7,16 @@ input { height:88rpx; min-height:88rpx; padding:0 20rpx; font-size:28rpx; line-h
 .meeting-list-heading { display:flex; align-items:flex-start; gap:16rpx; }
 .meeting-list-title { flex:1; min-width:0; overflow-wrap:break-word; }
 .meeting-owner-badge { flex-shrink:0; color:#3157ad; background:#eaf0ff; border-radius:10rpx; padding:5rpx 12rpx; font-size:22rpx; line-height:1.5; }
+
+.meeting-list-window { width:100%; margin-top:20rpx; }
+.slot.meeting-list-item { box-sizing:border-box; min-height:144rpx; margin-top:16rpx; padding:20rpx; }
+.slot.meeting-list-item:first-child { margin-top:0; }
+.meeting-list-hint { font-size:23rpx; margin-top:12rpx; }
+
+.meeting-list-footer { display:flex; align-items:center; justify-content:space-between; gap:12rpx; margin-top:2rpx; }
+.meeting-supplement-badge { flex-shrink:0; white-space:nowrap; color:#b23440; background:#ffedf0; border-radius:10rpx; padding:5rpx 12rpx; font-size:22rpx; line-height:1.5; }
+
+.meeting-status-row { display:flex; align-items:center; justify-content:space-between; gap:12rpx; margin-top:6rpx; }
+.meeting-list-status { font-size:29rpx; line-height:1.6; }
+.meeting-collected-badge { flex-shrink:0; white-space:nowrap; color:#217553; background:#e0f2e9; border-radius:10rpx; padding:5rpx 12rpx; font-size:22rpx; line-height:1.5; }
+.meeting-list-updated { flex:1; min-width:0; font-size:25rpx; line-height:1.7; }

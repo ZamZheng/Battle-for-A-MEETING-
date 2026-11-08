@@ -127,7 +127,7 @@ test('发起人更正头像模式角色时，头像/回复保留，标签随角�
 test('名单按首个中/英文冒号拆称呼与备注，空白行忽略，可选标记保留',()=>{
  const roles=D.parseRoster(' A：主持会议\r\n\r\n B : 提供建议：市场侧?\nC\nD：旁观？');
  assert.deepEqual(roles,[{name:'A',note:'主持会议',required:true},{name:'B',note:'提供建议：市场侧',required:false},{name:'C',note:'',required:true},{name:'D',note:'旁观',required:false}]);
- assert.equal(D.formatRoster(roles),'A：主持会议\nB：提供建议：市场侧?\nC\nD：旁观?');
+ assert.equal(D.formatRoster(roles),'A 主持会议\nB 提供建议：市场侧?\nC\nD 旁观?');
 });
 test('拆分后校验称呼/备注长度和重复称呼，不能用不同备注绕过重名检查',()=>{
  assert.throws(()=>D.parseRoster('：只有备注'),/称呼/);
@@ -188,4 +188,166 @@ test('候选确实过期时给出准确原因和评估时刻，不用冲突票�
  const {m}=novemberMeetingSnapshot(),now=D.dateTime('2026-11-08','12:01');
  const v=D.view(m,'owner',null,now);assert.equal(v.lockState.candidateIds.length,0);assert.match(v.lockState.emptyReason,/已过开始时间/);assert.equal(v.lockState.evaluatedAt,now);
  assert.deepEqual(v.lockState.decisions.map(s=>s.reason),['past','past','conflict']);
+});
+
+test('创建错误携带栏目定位信息，校验边界保持不变',()=>{
+ const cases=[
+  [{title:''},'title'],[{purpose:''},'purpose'],[{duration:1},'duration'],[{interval:1},'interval'],
+  [{dates:[]},'dates'],[{dates:['2030-02-30']},'dates'],[{dates:['2029-12-31']},'dates'],
+  [{to:'08:00'},'timeRange'],[{from:'bad'},'timeRange'],[{duration:240},'timeRange'],
+  [{roster:[]},'roster'],[{roster:Array.from({length:31},(_,i)=>({name:'成员'+i,required:true}))},'roster'],
+  [{roster:[{name:'甲',required:true},{name:'甲',required:true}]},'roster'],
+  [{roster:[{name:'甲',required:false}]},'roster'],[{roster:[{name:'甲',note:'长'.repeat(201),required:true}]},'roster'],
+  [{deadline:NOW},'deadline']
+ ];
+ for(const [bad,field] of cases)assert.throws(()=>meeting(bad),e=>e.field===field,JSON.stringify(bad));
+ assert.throws(()=>D.dateTime('2030-02-30','08:00','deadline'),e=>e.field==='deadline');
+ assert.throws(()=>D.parseRoster('：无称呼'),e=>e.field==='roster');
+ assert.throws(()=>meeting({excluded:meeting().slots.map(s=>s.id)}),e=>e.field==='candidates');
+});
+
+test('全不行补提：允许早于截止，时长固定，原投票保留且仅提议者新时段可以',()=>{
+ let m=ready();const original=D.clone(m),oldIds=m.slots.map(s=>s.id);
+ m=D.apply(m,'u0',null,'propose',{choices:choices(m,'no'),knownSlotIds:oldIds,date:'2030-01-02',time:'10:00'},NOW);
+ const added=m.slots.at(-1);assert.ok(added.start<m.deadline);assert.equal(added.end-added.start,m.duration*60000);assert.equal(added.proposed,true);
+ assert.equal(m.replies.u0[added.id],'yes');assert.equal(m.replies.u1[added.id],undefined);assert.equal(m.slots.length,original.slots.length+1);
+ assert.ok(oldIds.every(id=>m.replies.u0[id]==='no'));assert.deepEqual(m.replies.u1,original.replies.u1);
+ const owner=D.view(m,'owner',null,NOW);assert.equal(owner.originalSubmitted,4);assert.equal(owner.submitted,1);assert.deepEqual(owner.supplementMissing,['乙','丙','丁']);assert.equal(owner.lockState.allResponded,false);
+ const other=D.view(m,'u1',null,NOW);assert.equal(other.selfNeedsSupplement,true);assert.deepEqual(other.supplementMissing,[]);
+});
+
+test('连续旧页面建议累加，复用相同时间，不覆盖他人或自己已回答的新项',()=>{
+ let m=ready();const oldIds=m.slots.map(s=>s.id),oldNo=choices(m,'no');
+ m=D.apply(m,'u0',null,'propose',{choices:oldNo,knownSlotIds:oldIds,date:'2030-01-02',time:'10:00'},NOW);const first=m.slots.at(-1);
+ m=D.apply(m,'u1',null,'propose',{choices:oldNo,knownSlotIds:oldIds,date:'2030-01-02',time:'10:30'},NOW+1);const second=m.slots.at(-1);
+ assert.equal(m.slots.length,oldIds.length+2);assert.equal(m.replies.u0[first.id],'yes');assert.equal(m.replies.u1[second.id],'yes');assert.equal(m.replies.u0[second.id],undefined);assert.equal(m.replies.u1[first.id],undefined);
+ const v=D.view(m,'owner',null,NOW);assert.deepEqual(v.supplementMissing,['甲','乙','丙','丁']);
+ m=D.apply(m,'u2',null,'propose',{choices:oldNo,knownSlotIds:oldIds,date:'2030-01-02',time:'10:00'},NOW+2);assert.equal(m.slots.length,oldIds.length+2);assert.equal(m.replies.u2[first.id],'yes');
+ m=D.apply(m,'u2',null,'reply',{choices:{...oldNo,[second.id]:'maybe'},knownSlotIds:[...oldIds,second.id]},NOW+3);assert.equal(m.replies.u2[first.id],'yes');assert.equal(m.replies.u2[second.id],'maybe');
+ assert.equal(D.view(m,'u2',null,NOW).selfSubmitted,true);
+});
+
+test('建议期间旧页面普通提交保留新候选，补齐后可锁定，旧锁定快照失效',()=>{
+ let m=ready(),version=m.version;const oldIds=m.slots.map(s=>s.id),oldVotes=choices(m,'yes');
+ m=D.apply(m,'u0',null,'propose',{choices:choices(m,'no'),date:'2030-01-02',time:'10:00'},NOW);const added=m.slots.at(-1);
+ m=D.apply(m,'u1',null,'reply',{choices:oldVotes,knownSlotIds:oldIds},NOW);assert.equal(D.view(m,'u1',null,NOW).selfNeedsSupplement,true);
+ assert.throws(()=>D.apply(m,'owner',null,'lock',{slotId:added.id,version:m.version},NOW),/全部提交/);
+ for(const actor of ['u1','u2','u3'])m=D.apply(m,actor,null,'reply',{choices:{...m.replies[actor],[added.id]:'maybe'}},NOW);
+ assert.equal(D.view(m,'owner',null,NOW).submitted,4);assert.throws(()=>D.apply(m,'owner',null,'lock',{slotId:added.id,version},NOW),/数据已更新/);
+ m=D.apply(m,'owner',null,'lock',{slotId:added.id,version:m.version},NOW);assert.equal(m.finalSlot,added.id);
+});
+
+test('建议失败不修改原会议：未全部不行、过去时间、旁听、截止和锁定均拒绝',()=>{
+ const m=ready(),snapshot=JSON.stringify(m),payload={choices:choices(m,'no'),date:'2029-12-31',time:'10:00'};
+ assert.throws(()=>D.apply(m,'u0',null,'propose',payload,NOW),/未来/);assert.equal(JSON.stringify(m),snapshot);
+ assert.throws(()=>D.apply(m,'u0',null,'propose',{...payload,choices:choices(m,'maybe')},NOW),/全部选择不行/);
+ assert.throws(()=>D.apply(m,'owner',null,'propose',payload,NOW),/参会角色/);
+ assert.throws(()=>D.apply(m,'u0',null,'propose',payload,m.deadline),/截止/);
+ const locked=D.apply(m,'owner',null,'lock',{slotId:m.slots[0].id,version:m.version},NOW);
+ assert.throws(()=>D.apply(locked,'u0',null,'propose',payload,NOW),/锁定/);
+});
+
+test('建议支持跨日结束和80项上限，超过限制不能部分保存',()=>{
+ let m=ready();m=D.apply(m,'u0',null,'propose',{choices:choices(m,'no'),date:'2030-01-02',time:'23:30'},NOW);
+ assert.match(m.slots.at(-1).label,/2030-01-03 00:30/);
+ const full=ready();while(full.slots.length<80){const start=full.slots.at(-1).start+1800000;full.slots.push({id:'s'+start,start,end:start+3600000,label:D.labelTime(start)});}
+ const before=JSON.stringify(full);assert.throws(()=>D.apply(full,'u0',null,'propose',{choices:choices(full,'no'),date:'2030-01-10',time:'10:00'},NOW),/80/);assert.equal(JSON.stringify(full),before);
+});
+
+test('新增建议记录当时的短称呼，重复时间不改作者，后续身份更正不改历史来源',()=>{
+ let m=ready();m.roles[0].name='A：仅认领页备注';
+ m=D.apply(m,'u0',null,'propose',{choices:choices(m,'no'),date:'2030-01-02',time:'23:31'},NOW);
+ const slot=m.slots.at(-1);assert.equal(slot.proposerName,'A');assert.equal(slot.end-slot.start,3600000);
+ m=D.apply(m,'u1',null,'propose',{choices:choices(m,'no'),date:'2030-01-02',time:'23:31'},NOW+1);
+ assert.equal(m.slots.length,4);assert.equal(m.slots.at(-1).proposerName,'A');
+ m=D.apply(m,'owner',null,'move',{targetActor:'u0',roleId:null},NOW+2);
+ assert.equal(D.view(m,'u1',null,NOW).slots.find(s=>s.proposed).proposerName,'A');
+});
+
+test('旧建议从新增时的认领历史恢复作者，无历史时不编造来源，读取不重写旧数据',()=>{
+ let m=ready();m=D.apply(m,'u0',null,'propose',{choices:choices(m,'no'),date:'2030-01-02',time:'10:00'},NOW);
+ delete m.slots.at(-1).proposerName;delete m.slots.at(-1).proposerRoleId;
+ m=D.apply(m,'owner',null,'move',{targetActor:'u0',roleId:null},NOW+1);
+ delete m.slots.at(-1).proposerName;delete m.slots.at(-1).proposerRoleId;const before=JSON.stringify(m);
+ assert.equal(D.view(m,'u1',null,NOW).slots.find(s=>s.proposed).proposerName,'甲');assert.equal(JSON.stringify(m),before);
+ m.history=[];assert.equal(D.view(m,'u1',null,NOW).slots.find(s=>s.proposed).proposerName,undefined);
+});
+
+function infoPayload(m,overrides={}) {return {infoVersion:m.infoVersion || 1,title:m.title,purpose:m.purpose,roster:m.roles.map(r=>({...r})),...overrides};}
+test('名单空格录入：首个分隔拆称呼，连续空格/全角空格/Tab/旧冒号兼容，备注内部空格冒号保留',()=>{
+ const roles=D.parseRoster(' A  产品部 项目负责人\nB\t技术：支持?\nC　运营团队\nD：主持人');
+ assert.deepEqual(roles.map(r=>[r.name,r.note,r.required]),[['A','产品部 项目负责人',true],['B','技术：支持',false],['C','运营团队',true],['D','主持人',true]]);
+ assert.deepEqual(D.parseRoster(D.formatRoster(roles)),roles);assert.throws(()=>D.parseRoster('：只有备注'),/称呼/);
+});
+
+test('修改主题目的、重排与改称呼保留角色ID/头像/投票和全部时间字段，忽略额外时间修改',()=>{
+ const m=ready(),before=D.clone(m),rows=[m.roles[2],{...m.roles[0],name:'主持',note:'新部门'},m.roles[1],m.roles[3]];
+ const result=D.apply(m,'owner',null,'editInfo',infoPayload(m,{title:'新主题',purpose:'新目的',roster:rows,duration:15,deadline:NOW,slots:[]}),NOW);
+ assert.equal(result.title,'新主题');assert.equal(result.purpose,'新目的');assert.deepEqual(result.roles.map(r=>r.id),['r2','r0','r1','r3']);assert.equal(result.roles[1].name,'主持');
+ for(const field of ['slots','replies','members','dates','duration','deadline','token','inviteActive','previousId'])assert.deepEqual(result[field],before[field]);
+ assert.equal(result.infoVersion,2);assert.equal(result.version,m.version+1);assert.deepEqual(m,before);
+});
+
+test('新增成员使用新ID并等待认领回复，不影响旧人的已提交选择，补齐恢复可锁定',()=>{
+ let m=ready(),oldReplies=D.clone(m.replies);
+ m=D.apply(m,'owner',null,'editInfo',infoPayload(m,{roster:[...m.roles,{id:null,name:'新同事',note:'支持',required:false}]}),NOW);
+ const role=m.roles.at(-1);assert.equal(role.id,'r4');assert.deepEqual(m.replies,oldReplies);assert.equal(D.view(m,'owner',null,NOW).submitted,4);assert.equal(D.view(m,'owner',null,NOW).total,5);
+ assert.deepEqual(D.view(m,'owner',null,NOW).missing,['新同事']);assert.throws(()=>D.apply(m,'owner',null,'lock',{slotId:m.slots[0].id,version:m.version},NOW),/全部提交/);
+ m=claim(m,'new','r4');m=reply(m,'new','maybe');assert.equal(D.view(m,'owner',null,NOW).submitted,5);
+ m=D.apply(m,'owner',null,'lock',{slotId:m.slots[0].id,version:m.version},NOW);assert.equal(m.status,'locked');
+});
+
+test('删除已认领角色须精确确认，转为旁听保留头像与回复；删除后不重用旧ID',()=>{
+ let m=ready();m.members[0].profile={nameSource:'role',name:'甲',nickname:'',avatar:'avatar.png'};
+ const payload=infoPayload(m,{roster:m.roles.filter(r=>r.id!=='r0')});const before=JSON.stringify(m);
+ assert.throws(()=>D.apply(m,'owner',null,'editInfo',payload,NOW),/认领情况/);assert.equal(JSON.stringify(m),before);
+ m=D.apply(m,'owner',null,'editInfo',{...payload,confirmedRemovals:[{actor:'u0',roleId:'r0'}]},NOW);
+ const person=m.members.find(p=>p.actor==='u0');assert.equal(person.roleId,null);assert.equal(person.profile.name,'旁听者');assert.equal(person.profile.avatar,'avatar.png');assert.ok(m.replies.u0);
+ assert.equal(D.view(m,'u0',null,NOW).self.roleId,null);assert.equal(D.view(m,'owner',null,NOW).total,3);
+ m=D.apply(m,'owner',null,'editInfo',infoPayload(m,{roster:[...m.roles,{name:'新甲',note:'',required:true}]}),NOW);assert.equal(m.roles.at(-1).id,'r4');
+ const empty=meeting();let deleted=D.apply(empty,'owner',null,'editInfo',infoPayload(empty,{roster:empty.roles.slice(0,3)}),NOW);
+ deleted=D.apply(deleted,'owner',null,'editInfo',infoPayload(deleted,{roster:[...deleted.roles,{name:'新人',note:'',required:true}]}),NOW);assert.equal(deleted.roles.at(-1).id,'r4');
+});
+
+test('编辑期间新回复及新建议不丢失，会议信息二次修改则拒绝旧编辑页',()=>{
+ let m=ready();const stale=infoPayload(m,{title:'编辑中的主题'});
+ m=D.apply(m,'u0',null,'propose',{choices:choices(m,'no'),date:'2030-01-02',time:'10:00'},NOW);const slots=D.clone(m.slots),replies=D.clone(m.replies);
+ m=D.apply(m,'owner',null,'editInfo',stale,NOW);assert.deepEqual(m.slots,slots);assert.deepEqual(m.replies,replies);
+ assert.throws(()=>D.apply(m,'owner',null,'editInfo',stale,NOW),/会议信息已被修改/);
+});
+
+test('删除确认期间被认领的角色不能静默转旁听，须重新确认最新占位',()=>{
+ let m=meeting();const payload=infoPayload(m,{roster:m.roles.filter(r=>r.id!=='r2')});assert.deepEqual(D.prepareInfoEdit(m,payload).removedBindings,[]);
+ m=claim(m,'late','r2');const before=JSON.stringify(m);assert.throws(()=>D.apply(m,'owner',null,'editInfo',payload,NOW),/认领情况/);assert.equal(JSON.stringify(m),before);
+});
+
+test('会议信息编辑校验权限、状态、角色标识及名单边界，兼容缺少信息版本的旧会议',()=>{
+ const m=ready(),payload=infoPayload(m);
+ for(const actor of ['u0','visitor'])assert.throws(()=>D.apply(m,actor,'invite','editInfo',payload,NOW),/仅发起人/);
+ assert.throws(()=>D.apply(m,'owner',null,'editInfo',payload,m.deadline),/截止/);
+ for(const status of ['locked','cancelled'])assert.throws(()=>D.apply({...m,status},'owner',null,'editInfo',payload,NOW),/锁定或取消/);
+ const cases=[{title:''},{purpose:''},{roster:[]},{roster:[{...m.roles[0]},{...m.roles[0]}]},{roster:[{...m.roles[0],id:'invalid'}]},
+  {roster:[{...m.roles[0],required:false}]},{roster:[{...m.roles[0],name:'新 称呼'}]},{roster:[{...m.roles[0],note:'长'.repeat(201)}]}];
+ for(const bad of cases)assert.throws(()=>D.apply(m,'owner',null,'editInfo',{...payload,...bad},NOW));
+ const old=D.clone(m);delete old.infoVersion;delete old.nextRoleIndex;assert.equal(D.apply(old,'owner',null,'editInfo',infoPayload(old),NOW).infoVersion,2);
+});
+
+test('更正分号误写的成员称呼后，已有新增建议从原角色ID显示新称呼，时间和投票不变',()=>{
+ for(const legacy of [false,true]){
+  let m=ready();m.roles[0].name='吴主任; 医院一线经验';
+  m=D.apply(m,'u0',null,'propose',{choices:choices(m,'no'),date:'2030-01-02',time:'10:00'},NOW);
+  if(legacy)delete m.slots.at(-1).proposerRoleId;
+  const start=m.slots.at(-1).start,replies=D.clone(m.replies);
+  m=D.apply(m,'owner',null,'editInfo',infoPayload(m,{roster:m.roles.map(r=>r.id==='r0'?{...r,name:'吴主任',note:'医院一线经验'}:r)}),NOW);
+  const slot=D.view(m,'u1',null,NOW).slots.find(s=>s.proposed);assert.equal(slot.proposerName,'吴主任');assert.equal(slot.proposerRoleId,'r0');assert.equal(slot.start,start);assert.deepEqual(m.replies,replies);
+ }
+});
+
+test('提议来源跟随原角色改称呼，原角色被删除后保留最后称呼，不冒认新角色',()=>{
+ let m=ready();m=D.apply(m,'u0',null,'propose',{choices:choices(m,'no'),date:'2030-01-02',time:'10:00'},NOW);
+ m=D.apply(m,'owner',null,'editInfo',infoPayload(m,{roster:m.roles.map(r=>r.id==='r0'?{...r,name:'新称呼'}:r)}),NOW);
+ assert.equal(D.view(m,'owner',null,NOW).slots.find(s=>s.proposed).proposerName,'新称呼');
+ m=D.apply(m,'owner',null,'editInfo',infoPayload(m,{roster:m.roles.filter(r=>r.id!=='r0'),confirmedRemovals:[{actor:'u0',roleId:'r0'}]}),NOW);
+ m=D.apply(m,'owner',null,'editInfo',infoPayload(m,{roster:[...m.roles,{name:'另一个人',note:'',required:true}]}),NOW);
+ const slot=D.view(m,'owner',null,NOW).slots.find(s=>s.proposed);assert.equal(slot.proposerName,'新称呼');assert.equal(slot.proposerRoleId,'r0');assert.ok(!m.roles.some(r=>r.id==='r0'));
 });

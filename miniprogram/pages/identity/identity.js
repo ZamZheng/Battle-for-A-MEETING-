@@ -1,7 +1,7 @@
 const store = require('../../lib/store');
 const ui = require('../../lib/ui');
 Page({
- data:{meeting:null,error:'',busy:false,savingAvatar:false,avatar:'',roles:[],roleIndex:-1,editable:false},
+ data:{meeting:null,error:'',busy:false,savingAvatar:false,noticePending:false,avatar:'',roles:[],roleIndex:-1,editable:false},
  onLoad(options) {this.id=options.id;this.token=options.token || '';this.edit=options.edit==='1';},
  onShow() {this.refresh();},
  onUnload() {this.unloaded=true;},
@@ -21,41 +21,49 @@ Page({
    this.loadedActor=store.actor();
   } catch(e) {this.setData({meeting:null});ui.error(this,e);}
  },
+ showIdentityError(error,title='暂时无法认领') {
+  if(this.unloaded || this.data.noticePending) return;
+  this.setData({error:error.message || '操作未完成，请重试',roleIndex:-1,noticePending:true});
+  const close=()=>{if(!this.unloaded)this.setData({noticePending:false});};
+  wx.showModal({title,content:this.data.error,showCancel:false,confirmText:'OK',success:close,fail:close});
+ },
  chooseAvatar(e) {
   const tempFilePath=e.detail && e.detail.avatarUrl;
-  if (!tempFilePath || this.data.savingAvatar || this.data.busy) return; // cancellation is not an app failure
+  if (!tempFilePath || this.data.savingAvatar || this.data.busy || this.data.noticePending) return; // cancellation is not an app failure
   const actor=store.actor();
-  this.setData({savingAvatar:true,error:''});
+  this.setData({savingAvatar:true,error:'',roleIndex:-1});
   wx.getFileSystemManager().saveFile({tempFilePath,
    success:r=>{if (!this.unloaded && store.actor()===actor) this.setData({avatar:r.savedFilePath});},
-   fail:()=>{if (!this.unloaded && store.actor()===actor) ui.error(this,new Error('头像保存失败，请重新选择'));},
+   fail:()=>{if (!this.unloaded && store.actor()===actor) this.showIdentityError(new Error('头像保存失败，请重新选择'),'请重新选择头像');},
    complete:()=>{if (!this.unloaded) this.setData({savingAvatar:false});}
   });
  },
  async selectRole(e) {
-  if (this.data.busy || this.data.savingAvatar) return;
+  if (this.data.busy || this.data.savingAvatar || this.data.noticePending) return;
   const index=Number(e.currentTarget.dataset.index);
   if (!Number.isInteger(index) || !this.data.roles[index]) return;
+  if (!this.data.avatar) {this.showIdentityError(new Error('请先选择头像，再点击下方角色进行认领。'),'请先选择头像');return;}
   this.setData({roleIndex:index,error:''});
   await this.confirmIdentity();
  },
  async confirmIdentity() {
-  if (this.data.busy || this.data.savingAvatar) return;
+  if (this.data.busy || this.data.savingAvatar || this.data.noticePending) return;
   this.setData({error:''});
-  if (!this.data.avatar) {ui.error(this,new Error('请先选择头像，再认领角色'));return;}
+  if (!this.data.avatar) {this.showIdentityError(new Error('请先选择头像，再点击下方角色进行认领。'),'请先选择头像');return;}
   const role=this.data.roles[this.data.roleIndex];
-  if (!role) {ui.error(this,new Error('请选择一个角色'));return;}
-  if (role.unavailable) {ui.error(this,new Error('此角色已被认领，请选择其他角色或联系发起人更正'));return;}
+  if (!role) {this.showIdentityError(new Error('请选择一个角色'));return;}
+  if (role.unavailable) {this.showIdentityError(new Error('此角色已被认领，请选择其他角色或联系发起人更正'));return;}
   const actor=store.actor();
   this.setData({busy:true});
   try {
    const message=role.id===null ? '确认以「旁听者」加入？你不参与时间协调，只查看会议信息。' :
-     '确认认领「'+role.name+'」？'+(role.required?'你是必到人员，你的明确同意会影响会议时间确定。':'你是可选人员，你的选择参与汇总，但不阻止锁定。');
-   if (!(await ui.confirm(message,'确认认领角色'))) return;
+     '确认认领「'+role.name+'」？'+(role.required?'你是必到人员，请提交每个候选时间的选择。':'你是可选人员，你的选择也会参与会议时间协调。');
+   if (!(await ui.confirm(message,'确认认领角色'))) {if(!this.unloaded)this.setData({roleIndex:-1});return;}
+   if (this.unloaded) return;
    if (store.actor()!==actor) throw new Error('测试身份已变化，请重新进入');
    store.act(this.id,this.token,'claim',{roleId:role.id,profile:{nameSource:'role',avatar:this.data.avatar}});
    this.enter();
-  } catch(e) {ui.error(this,e);} finally {if (!this.unloaded) this.setData({busy:false});}
+  } catch(e) {this.showIdentityError(e);} finally {if (!this.unloaded) this.setData({busy:false});}
  },
  enter() {
   wx.redirectTo({url:'/pages/meeting/meeting?id='+encodeURIComponent(this.id)+'&token='+encodeURIComponent(this.token),fail:e=>ui.error(this,new Error(e.errMsg || '无法进入会议，请重试'))});

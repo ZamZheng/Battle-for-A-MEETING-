@@ -1,7 +1,7 @@
 const store = require('../../lib/store');
 const ui = require('../../lib/ui');
 Page({
-  data:{ meetings:[], identities:store.identities, actorIndex:0, error:'', invite:'', highlightId:'' },
+  data:{ meetings:[], meetingListStyle:'height:0rpx;', meetingScrollTarget:'', identities:store.identities, actorIndex:0, error:'', invite:'', highlightId:'' },
   onLoad(options) {
     this.requestedHighlight=options.highlight || '';
     this.highlightActor=store.actor();
@@ -11,13 +11,16 @@ Page({
   scrollToHighlight() {
     if (!this.ready || !this.data.highlightId || this.highlightScrolled) return;
     this.highlightScrolled=true;
+    const index=this.data.meetings.findIndex(m=>m.id===this.data.highlightId);
+    if(index>=0)this.setData({meetingScrollTarget:'home-meeting-'+index});
     wx.pageScrollTo({selector:'#my-meetings',duration:300});
   },
   refresh() {
     try {
       const meetings=store.list();
       const highlightId=this.highlightActor===store.actor() && meetings.some(m=>m.id===this.requestedHighlight) ? this.requestedHighlight : '';
-      this.setData({meetings,highlightId,actorIndex:store.identities.findIndex(p=>p.id===store.actor()),error:''},()=>this.scrollToHighlight());
+      const meetingListStyle='height:'+Math.max(0,Math.min(meetings.length,4)*160-16)+'rpx;';
+      this.setData({meetings,meetingListStyle,highlightId,...(!highlightId?{meetingScrollTarget:''}:{}),actorIndex:store.identities.findIndex(p=>p.id===store.actor()),error:''},()=>this.scrollToHighlight());
     } catch(e) { ui.error(this,e); }
   },
   switchActor(e) { try { store.setActor(store.identities[Number(e.detail.value)].id); this.requestedHighlight='';this.refresh(); } catch(e) { ui.error(this,e); } },
@@ -25,7 +28,7 @@ Page({
   open(e) {
     try {
       const id=e.currentTarget.dataset.id,token=store.simulationInvite(id);
-      if (id===this.data.highlightId) {this.requestedHighlight='';this.setData({highlightId:''});}
+      if (id===this.data.highlightId) {this.requestedHighlight='';this.setData({highlightId:'',meetingScrollTarget:''});}
       wx.navigateTo({url:'/pages/meeting/meeting?id='+encodeURIComponent(id)+(token?'&token='+encodeURIComponent(token):'')});
     } catch(e) { ui.error(this,e); }
   },

@@ -30,9 +30,20 @@ function create(input) {
   return { id, token };
 }
 function list() {
-  const current=actor();
+  const current=actor(),now=Date.now();
   return Object.values(read().meetings).filter(m => m.owner === current || m.members.some(p => p.actor === current))
-    .sort((a,b)=>b.updatedAt-a.updatedAt).map(m => ({ id:m.id, title:m.title, status:m.status, updatedAt:D.labelTime(m.updatedAt),isOwner:m.owner===current }));
+    .sort((a,b)=>b.updatedAt-a.updatedAt).map(m => {
+      const isOwner=m.owner===current,self=m.members.find(p=>p.actor===current),proposed=m.slots.filter(s=>s.proposed);
+      const missing=person=>!person || proposed.some(s=>!['yes','maybe','no'].includes((m.replies[person.actor] || {})[s.id]));
+      const reply=self && m.replies[self.actor];
+      const hadOriginalReply=!!reply && m.slots.filter(s=>!s.proposed).every(s=>['yes','maybe','no'].includes(reply[s.id]));
+      // This badge represents the current voter's own pending supplement only.
+      // Other members' progress remains visible in the organizer's detail view.
+      const needsSupplement=m.status==='collecting' && now<m.deadline && proposed.length>0 && hadOriginalReply &&
+        !!(self && self.roleId && missing(self));
+      const collectionComplete=isOwner && m.status==='collecting' && D.getLockState(m,now).allResponded;
+      return {id:m.id,title:m.title,status:m.status,updatedAt:D.labelTime(m.updatedAt),isOwner,needsSupplement,collectionComplete};
+    });
 }
 // Mock test utility only: carry an active invitation between simulated users.
 // It requires a currently authorized context and does not revive revoked invites.

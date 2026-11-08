@@ -17,11 +17,21 @@
     <view class="heading">我的会议</view>
     <view class="muted">已加入或发起的会议，随时回来查看。</view>
     <view wx:if="{{!meetings.length}}" class="muted">还没有会议，先通过邀请加入，或发起一场会议。</view>
-    <view wx:for="{{meetings}}" wx:key="id" class="slot {{item.id === highlightId ? 'meeting-highlight' : ''}}" data-id="{{item.id}}" bindtap="open">
-      <view wx:if="{{item.id === highlightId}}" class="meeting-highlight-label">刚刚更新 · 已保存你的选择</view>
-      <view class="meeting-list-heading"><view class="meeting-list-title">{{item.title}} →</view><text wx:if="{{item.isOwner}}" class="meeting-owner-badge">你是发起人</text></view>
-      <view class="muted">{{item.status === 'locked' ? '已锁定' : item.status === 'cancelled' ? '已取消' : '收集／待确认'}} · 更新 {{item.updatedAt}}</view>
-    </view>
+    <scroll-view wx:if="{{meetings.length}}" class="meeting-list-window" style="{{meetingListStyle}}" scroll-y="{{true}}" scroll-into-view="{{meetingScrollTarget}}" scroll-with-animation="{{true}}">
+      <view wx:for="{{meetings}}" wx:key="id" id="home-meeting-{{index}}" class="slot meeting-list-item {{item.id === highlightId ? 'meeting-highlight' : ''}}" data-id="{{item.id}}" bindtap="open">
+        <view wx:if="{{item.id === highlightId}}" class="meeting-highlight-label">刚刚更新 · 已保存你的选择</view>
+        <view class="meeting-list-heading"><view class="meeting-list-title">{{item.title}} →</view><text wx:if="{{item.isOwner}}" class="meeting-owner-badge">你是发起人</text></view>
+        <view class="meeting-status-row">
+          <view class="muted meeting-list-status">{{item.status === 'locked' ? '已锁定' : item.status === 'cancelled' ? '已取消' : '收集／待确认'}}</view>
+          <text wx:if="{{item.collectionComplete}}" class="meeting-collected-badge">已收集完毕</text>
+        </view>
+        <view class="meeting-list-footer">
+          <view class="muted meeting-list-updated">更新 {{item.updatedAt}}</view>
+          <text wx:if="{{item.needsSupplement}}" class="meeting-supplement-badge">备选已变化，请补充</text>
+        </view>
+      </view>
+    </scroll-view>
+    <view wx:if="{{meetings.length > 4}}" class="muted meeting-list-hint">上下滑动，查看其他会议</view>
   </view>
   <view class="notice">本版用于流程试用。数据仅保存在本机，切换身份可模拟多人，不代表真实微信登录或跨设备共享。</view>
   <button class="danger" bindtap="reset">清空本机模拟数据</button>

@@ -1,37 +1,76 @@
 <view class="container">
  <view class="badge">{{previousId ? '新一轮 · 不沿用旧回复' : '发起会议'}} · 北京时间</view>
  <view class="title">提出候选时间</view>
- <view wx:if="{{error}}" class="error">{{error}}</view>
  <view class="card">
-  <text class="label">会议主题</text><input maxlength="100" value="{{title}}" data-field="title" bindinput="field" placeholder="例如：项目启动讨论"/>
-  <text class="label">会议目的</text><textarea maxlength="1000" value="{{purpose}}" data-field="purpose" bindinput="field" placeholder="让大家知道这次需要讨论什么"/>
-  <text class="label">预计日期（可多选）</text>
-  <picker mode="date" value="{{date}}" bindchange="dateChanged"><view class="picker">{{date}} ▾</view></picker><button class="{{dateAdded ? 'date-added' : 'primary'}}" disabled="{{dateAdded}}" bindtap="addDate">{{dateAdded ? '已添加此日期' : '添加此日期'}}</button>
-  <view class="row"><view wx:for="{{dates}}" wx:key="*this" class="badge" data-date="{{item}}" bindtap="removeDate">{{item}} ×</view></view>
-  <text class="label">每天可安排时间</text>
-  <view class="row"><picker mode="time" value="{{from}}" data-field="from" bindchange="field"><view class="picker">{{from}} 开始</view></picker><picker mode="time" value="{{to}}" data-field="to" bindchange="field"><view class="picker">{{to}} 结束</view></picker></view>
-  <text class="label">会议时长（分钟）</text><input type="number" value="{{duration}}" data-field="duration" bindinput="field"/>
-  <text class="label">候选开始间隔（分钟）</text><input type="number" value="{{interval}}" data-field="interval" bindinput="field"/>
-  <text class="label">回复截止（不晚于最早候选）</text>
-  <view class="row"><picker mode="date" value="{{deadlineDate}}" data-field="deadlineDate" bindchange="field"><view class="picker">{{deadlineDate}}</view></picker><picker mode="time" value="{{deadlineTime}}" data-field="deadlineTime" bindchange="field"><view class="picker">{{deadlineTime}}</view></picker></view>
+  <view id="create-field-title" class="form-field {{validationField === 'title' ? 'has-error' : ''}}">
+   <text class="label">会议主题</text><input maxlength="100" value="{{title}}" data-field="title" bindfocus="editField" bindinput="field" placeholder="例如：项目启动讨论"/>
+   <view wx:if="{{validationField === 'title'}}" class="field-error">{{validationMessage}}</view>
+  </view>
+  <view id="create-field-purpose" class="form-field {{validationField === 'purpose' ? 'has-error' : ''}}">
+   <text class="label">会议目的</text><textarea maxlength="1000" value="{{purpose}}" data-field="purpose" bindfocus="editField" bindinput="field" placeholder="让大家知道这次需要讨论什么"/>
+   <view wx:if="{{validationField === 'purpose'}}" class="field-error">{{validationMessage}}</view>
+  </view>
+  <view id="create-field-dates" class="form-field {{validationField === 'dates' ? 'has-error' : ''}}">
+   <text class="label">预计日期（可多选）</text>
+   <date-time-picker mode="date" value="{{date}}" data-field="dates" bindopen="editField" bindchange="dateChanged" placeholder="选择日期"/><button class="{{dateAdded ? 'date-added' : 'primary'}}" disabled="{{dateAdded}}" bindtap="addDate">{{dateAdded ? '已添加此日期' : '添加此日期'}}</button>
+   <view class="row"><view wx:for="{{dateItems}}" wx:key="date" class="badge" data-date="{{item.date}}" bindtap="removeDate">{{item.label}} ×</view></view>
+   <view wx:if="{{validationField === 'dates'}}" class="field-error">{{validationMessage}}</view>
+  </view>
+  <view id="create-field-timeRange" class="form-field {{validationField === 'timeRange' ? 'has-error' : ''}}">
+   <text class="label">每天可安排时间</text>
+   <view class="row daily-time-row"><date-time-picker mode="time" centered="{{true}}" value="{{from}}" data-field="from" bindopen="editField" bindchange="field" suffix="开始"/><date-time-picker mode="time" centered="{{true}}" value="{{to}}" data-field="to" bindopen="editField" bindchange="field" suffix="结束"/></view>
+   <view wx:if="{{validationField === 'timeRange'}}" class="field-error">{{validationMessage}}</view>
+  </view>
+  <view id="create-field-duration" class="form-field {{validationField === 'duration' ? 'has-error' : ''}}">
+   <text class="label">会议时长（分钟）</text><input type="number" class="number-time-input" value="{{duration}}" data-field="duration" bindfocus="editField" bindinput="field"/>
+   <view wx:if="{{validationField === 'duration'}}" class="field-error">{{validationMessage}}</view>
+  </view>
+  <view id="create-field-interval" class="form-field {{validationField === 'interval' ? 'has-error' : ''}}">
+   <text class="label">候选开始间隔（分钟）</text><input type="number" class="number-time-input" value="{{interval}}" data-field="interval" bindfocus="editField" bindinput="field"/>
+   <view wx:if="{{validationField === 'interval'}}" class="field-error">{{validationMessage}}</view>
+  </view>
+  <view id="create-field-deadline" class="form-field {{validationField === 'deadline' ? 'has-error' : ''}}">
+   <text class="label">回复截止（不晚于最早候选）</text>
+   <view class="row deadline-row"><date-time-picker class="deadline-date" mode="date" centered="{{true}}" value="{{deadlineDate}}" data-field="deadlineDate" bindopen="editField" bindchange="field" placeholder="选择日期"/><date-time-picker class="deadline-time" mode="time" centered="{{true}}" value="{{deadlineTime}}" data-field="deadlineTime" bindopen="editField" bindchange="field" placeholder="选择时间"/></view>
+   <view wx:if="{{validationField === 'deadline'}}" class="field-error">{{validationMessage}}</view>
+  </view>
  </view>
  <view class="card">
-  <view class="heading">预设参会名单</view><view class="muted">每行一人，格式为「称呼：备注」，也可只填称呼。备注只在认领选项中显示，其他地方只显示称呼。默认必到，可选人员在行末加 ?。发起人如参会，也须列入。</view>
-  <textarea maxlength="8000" value="{{roster}}" data-field="roster" bindinput="field" placeholder="A：主持会议&#10;B：提供市场建议?"/>
+  <view id="create-field-roster" class="form-field {{validationField === 'roster' ? 'has-error' : ''}}">
+   <view class="heading">预设参会名单</view><view class="muted"><view>一行代表一位成员。</view><view>格式：成员称呼 + 备注信息（部门、职称、项目中的功能身份等）。</view></view>
+   <view wx:for="{{rows}}" wx:key="key" class="member-row">
+    <view class="member-inputs">
+     <input class="member-name" maxlength="40" value="{{item.name}}" placeholder="成员" data-key="{{item.key}}" data-field="name" bindfocus="editRosterField" bindinput="rosterField" disabled="{{busy || validationPending || publishedInvite}}"/>
+     <input class="member-note" maxlength="200" value="{{item.note}}" placeholder="备注信息" data-key="{{item.key}}" data-field="note" bindfocus="editRosterField" bindinput="rosterField" disabled="{{busy || validationPending || publishedInvite}}"/>
+    </view>
+    <view class="member-actions">
+     <picker range="{{kinds}}" value="{{item.required ? 0 : 1}}" data-key="{{item.key}}" data-field="required" bindtap="editRosterField" bindchange="rosterField" disabled="{{busy || validationPending || publishedInvite}}"><view class="member-kind">{{item.required ? '必到' : '可选'}} ▾</view></picker>
+     <button size="mini" data-key="{{item.key}}" data-direction="-1" bindtap="moveMember" disabled="{{busy || validationPending || publishedInvite || index === 0}}">上移</button>
+     <button size="mini" data-key="{{item.key}}" data-direction="1" bindtap="moveMember" disabled="{{busy || validationPending || publishedInvite || index === rows.length - 1}}">下移</button>
+     <button size="mini" class="danger" data-key="{{item.key}}" bindtap="removeMember" disabled="{{busy || validationPending || publishedInvite}}">删除</button>
+    </view>
+   </view>
+   <button bindtap="addMember" disabled="{{busy || validationPending || publishedInvite}}">添加成员</button>
+   <view wx:if="{{validationField === 'roster'}}" class="field-error">{{validationMessage}}</view>
+  </view>
  </view>
  <view class="card">
-  <button bindtap="preview">生成并预览完整候选</button>
-  <view class="muted">点击候选可移除／恢复。最多14个日期、80个候选、30位预设成员，为首版试用限制。</view>
-  <view wx:for="{{slots}}" wx:key="id" class="slot {{item.keep ? '' : 'muted'}}" data-id="{{item.id}}" bindtap="toggleSlot">{{item.keep ? '✓' : '×'}} {{item.label}}</view>
+  <view id="create-field-candidates" class="form-field {{validationField === 'candidates' ? 'has-error' : ''}}">
+   <button bindtap="preview" disabled="{{validationPending || busy || publishedInvite}}">生成并预览完整候选</button>
+   <view class="muted">点击候选可移除／恢复。最多14个日期、80个候选、30位预设成员，为首版试用限制。</view>
+   <view wx:for="{{slots}}" wx:key="id" class="slot {{item.keep ? '' : 'muted'}}" data-id="{{item.id}}" bindtap="toggleSlot">{{item.keep ? '✓' : '×'}} {{item.displayLabel || item.label}}</view>
+   <view wx:if="{{validationField === 'candidates'}}" class="field-error">{{validationMessage}}</view>
+  </view>
  </view>
- <button class="primary" loading="{{busy}}" disabled="{{busy || publishedInvite}}" bindtap="publish">发布会议邀请</button>
+ <button class="primary" loading="{{busy}}" disabled="{{busy || validationPending || publishedInvite}}" bindtap="publish">发布会议邀请</button>
+ <view wx:if="{{error && !validationField}}" class="field-error action-error">{{error}}</view>
  <view wx:if="{{publishedInvite}}" class="publish-overlay" catchtap="ignoreEvent">
   <view wx:if="{{!copySuccess}}" class="publish-dialog">
    <view class="publish-title">会议已创建，邀请大家选时间</view>
    <scroll-view class="invite-details" scroll-y="{{true}}">
     <view class="invite-label">会议主题</view><view class="invite-topic">{{publishedInvite.title}}</view>
     <view class="invite-label">备选时间 · 北京时间</view>
-    <view wx:for="{{publishedInvite.slots}}" wx:key="id" class="invite-slot">{{item.label}}</view>
+    <view wx:for="{{publishedInvite.slots}}" wx:key="id" class="invite-slot">{{item.displayLabel || item.label}}</view>
     <view class="invite-label">参与人</view><view class="invite-content">{{publishedInvite.participants}}</view>
     <view class="invite-label">邀请协调时间的链接</view><text class="invite-path" selectable="{{true}}">{{publishedInvite.path}}</text>
     <view class="invite-mock-note">本地模拟链接仅供本机测试，暂不能跨设备邀请。</view>

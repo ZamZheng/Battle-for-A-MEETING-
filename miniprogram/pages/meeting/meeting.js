@@ -1,5 +1,6 @@
 const store = require('../../lib/store');
 const D = require('../../lib/domain');
+const C = require('../../lib/calendar');
 const ui = require('../../lib/ui');
 // Any negative vote takes visual priority; its fraction drives a continuous red scale.
 function conflictHeatStyle(no,total) {
@@ -11,9 +12,10 @@ function conflictHeatStyle(no,total) {
 }
 Page({
  data:{ meeting:null,error:'',busy:false,submitPending:false,submissionSuccess:false,returningHome:false,returnError:'',identities:store.identities,actorIndex:0,choices:{},meetingLinkInput:'',linkDirty:false,noticeCopying:false,noticeError:'',lockPickerOpen:false,lockOptions:[],lockPickerError:'',lockPending:false,editingVote:false,moveSelections:{},moveConfirming:false,
+   proposalOpen:false,proposalDate:'',proposalTime:'',proposalRange:'',proposalError:'',proposalSaved:false,
    deadlineDate:'',deadlineTime:'',states:[{id:'yes',label:'可以'},{id:'maybe',label:'可协调'},{id:'no',label:'不行'}] },
  onLoad(options) { this.id=options.id; this.token=options.token || ''; },
- onShow() { this.pageInactive=false;this.setData({editingVote:false});this.refresh(); },
+ onShow() { this.pageInactive=false;if(!this.draftChoices)this.setData({editingVote:false});this.refresh(); },
  onHide() { this.pageInactive=true; },
  onUnload() { this.pageInactive=true;this.destroyed=true; },
  ignoreEvent() {},
@@ -30,22 +32,26 @@ Page({
    const roles=m.roles.map(r=>({...r,label:r.name}));
    const moveRoles=[{id:null,label:'旁听者'},...roles];
    const mine=m.self && m.self.roleId;
+   const editable=m.status==='collecting';
+   const hasSubmitted=m.selfSubmitted===undefined ? Object.keys(m.reply).length>0 : m.selfSubmitted;
+   const editingVote=!!this.data.editingVote && editable && !!mine && Object.keys(m.reply).length>0;
+   const supplementMode=editable && !!mine && !!m.selfNeedsSupplement && !editingVote;
+   const keepDraft=this.draftActor===store.actor() && this.draftChoices && editable;
+   const choices={...m.reply,...(keepDraft?this.draftChoices:{})};
+   const canVote=editable && !!mine && (!hasSubmitted || editingVote);
    const lockState=m.lockState;
    const candidateIds=lockState ? lockState.candidateIds : [];
-   const slots=m.slots.map(s=>({...s,eligible:candidateIds.includes(s.id),
+   const slots=m.slots.map(s=>({...s,eligible:candidateIds.includes(s.id),needsAnswer:!m.reply[s.id],canChoose:canVote && (!supplementMode || !m.reply[s.id]),
      yesStyle:'width:'+s.yesWidth+'%;',maybeStyle:'width:'+s.maybeWidth+'%;',noStyle:'width:'+s.noWidth+'%;',
      heatClass:s.no>0?'heat-conflict':s.yes===m.total?'heat-strong':s.yes/m.total>=0.5?'heat-medium':s.yes>0?'heat-light':'heat-empty',
      heatStyle:conflictHeatStyle(s.no,m.total),
      maybeNames:m.isOwner?s.details.filter(d=>d.choice==='maybe').map(d=>d.name).join('、'):'',
      noNames:m.isOwner?s.details.filter(d=>d.choice==='no').map(d=>d.name).join('、'):'',
-     heatDate:D.labelTime(s.start).slice(0,10),heatTime:D.labelTime(s.start).slice(11)+'—'+D.labelTime(s.end).slice(11),
+     displayLabel:C.rangeLabel(s.start,s.end),heatDate:C.dateLabel(D.labelTime(s.start).slice(0,10)),heatTime:D.labelTime(s.start).slice(11)+'—'+D.labelTime(s.end).slice(11),
    }));
-   const editable=m.status==='collecting';
-   const lockRuleReady=D.LOCK_RULE_VERSION==='vote-lock-state-v3' && !!lockState;
+   const lockRuleReady=D.LOCK_RULE_VERSION==='vote-lock-state-v4' && !!lockState;
    const allResponded=!!lockState && lockState.allResponded;
    const lockCandidates=slots.filter(s=>candidateIds.includes(s.id));
-   const hasSubmitted=m.selfSubmitted===undefined ? Object.keys(m.reply).length>0 : m.selfSubmitted;
-   const editingVote=!!this.data.editingVote && editable && !!mine && hasSubmitted;
    const managed=m.isOwner ? m.members.map(person=>{
     const chosen=Object.prototype.hasOwnProperty.call(this.data.moveSelections,person.actor);
     const selected=chosen ? this.data.moveSelections[person.actor] : person.roleId;
@@ -54,13 +60,14 @@ Page({
     return {...person,label:(roles.find(r=>r.id===person.roleId)||{}).name || '旁听者',
       targetIndex,targetLabel:chosen?role.label:'选择角色',canMove:chosen && role.id!==person.roleId};
    }) : [];
-   const presentation={ meeting:{...m,slots,roles}, actorIndex:store.identities.findIndex(p=>p.id===store.actor()), choices:m.reply,
-     slots:slots.map(s=>({...s,choice:m.reply[s.id] || ''})), editable, editingVote, canVote:editable && !!mine && (!hasSubmitted || editingVote),
+   const presentation={ meeting:{...m,slots,roles}, actorIndex:store.identities.findIndex(p=>p.id===store.actor()), choices,
+     slots:slots.map(s=>({...s,choice:choices[s.id] || ''})), editable, editingVote, canVote,supplementMode,
      hasSubmitted,showVotePrompt:editable && !!mine && !hasSubmitted,
+     supplementCount:m.slots.filter(s=>!m.reply[s.id]).length,supplementNames:(m.supplementMissing || []).join('、'),initialMissingText:(m.initialMissing || []).join('、'),
      isVoter:!!mine, roleName:mine ? (roles.find(r=>r.id===mine)||{}).name : '旁听者',
      lockRuleReady,allResponded,lockCandidates,canOpenLockPicker:m.isOwner && lockRuleReady && allResponded && (m.status==='collecting' || m.status==='closed'),
      noIntersection:!slots.some(s=>s.eligible), hasNames:m.isOwner || !!m.self,
-     updated:D.labelTime(m.updatedAt),deadline:D.labelTime(m.deadline),datesText:m.dates.join('、'),missingText:m.missing.join('、'),
+     updated:C.dateTimeLabel(m.updatedAt),deadline:C.dateTimeLabel(m.deadline),datesText:m.dates.map(C.dateLabel).join('、'),missingText:m.missing.join('、'),
      final:slots.find(s=>s.id===m.finalSlot)||null,moveRoles,
      ...(!this.data.linkDirty || !m.isOwner ? {meetingLinkInput:m.meetingLink,linkDirty:false} : {}),
      managed,correctionListStyle:'height:'+Math.min(managed.length,3)*160+'rpx;',hasMoreCorrections:managed.length>3,
@@ -70,7 +77,7 @@ Page({
   } catch(e) { this.setData({meeting:null}); ui.error(this,e); return null; }
  },
  switchActor(e) {
-  if (this.data.busy || this.data.submitPending || this.data.moveConfirming || this.data.noticeCopying || this.data.lockPending || this.data.lockPickerOpen) return;
+  if (this.data.busy || this.data.submitPending || this.data.moveConfirming || this.data.noticeCopying || this.data.lockPending || this.data.lockPickerOpen || this.data.proposalOpen) return;
   try {
    const next=store.identities[Number(e.detail.value)];
    if (!next) throw new Error('未知模拟身份');
@@ -79,6 +86,7 @@ Page({
    // the selected identity pass normal access checks (e.g. switching back to owner).
    try { this.token=store.simulationInvite(this.id,this.token); } catch (_) {}
    store.setActor(next.id);
+   this.draftChoices=null;
    this.setData({moveSelections:{},editingVote:false,linkDirty:false,meetingLinkInput:'',noticeError:''});
    this.refresh();
   } catch(e) { ui.error(this,e); }
@@ -86,40 +94,87 @@ Page({
  async run(action,payload) {
   if (this.data.busy) return false;
   this.setData({busy:true,error:''});
-  try { store.act(this.id,this.token,action,payload); if(action==='reply')this.setData({editingVote:false});this.refresh();return true; }
+  try { store.act(this.id,this.token,action,payload); if(action==='reply' || action==='propose'){this.draftChoices=null;this.setData({editingVote:false});}this.refresh();return true; }
   catch(e) { ui.error(this,e); return false; }
   finally { this.setData({busy:false}); }
  },
  beginClaim() {
   wx.navigateTo({url:'/pages/identity/identity?id='+encodeURIComponent(this.id)+'&token='+encodeURIComponent(this.token)+'&edit=1',fail:e=>ui.error(this,new Error(e.errMsg || '无法打开身份确认页，请重试'))});
  },
+ beginEditInfo() {
+  if(this.data.busy || this.data.submitPending || !this.data.editable || !this.data.meeting || !this.data.meeting.isOwner)return;
+  wx.navigateTo({url:'/pages/edit-info/edit-info?id='+encodeURIComponent(this.id)+'&token='+encodeURIComponent(this.token)});
+ },
  beginEditTime() {
   if (this.data.busy || this.data.submitPending) return;
   this.refresh();
   if (!this.data.meeting || !this.data.editable || !this.data.isVoter || !this.data.hasSubmitted) return;
-  this.setData({editingVote:true,canVote:true,error:''},()=>wx.pageScrollTo({selector:'#vote-options',duration:300}));
+  this.setData({editingVote:true,error:''});this.refresh();
+  wx.pageScrollTo({selector:'#vote-options',duration:300});
  },
  cancelEditTime() {
   if (this.data.busy || this.data.submitPending) return;
-  this.setData({editingVote:false});this.refresh();
+  this.draftChoices=null;this.setData({editingVote:false});this.refresh();
  },
  pick(e) {
   if (!this.data.canVote || this.data.submitPending) return;
+  const slot=this.data.slots.find(s=>s.id===e.currentTarget.dataset.slot);
+  if(!slot || !slot.canChoose || !this.data.states.some(s=>s.id===e.currentTarget.dataset.choice))return;
   const choices={...this.data.choices,[e.currentTarget.dataset.slot]:e.currentTarget.dataset.choice};
   this.setChoices(choices);
  },
- setChoices(choices) { this.setData({choices,slots:this.data.slots.map(s=>({...s,choice:choices[s.id]||''}))}); },
+ setChoices(choices) { this.draftActor=store.actor();this.draftChoices=choices;this.setData({choices,slots:this.data.slots.map(s=>({...s,choice:choices[s.id]||''}))}); },
  batch(e) {
   if (!this.data.canVote || this.data.submitPending) return;
-  const choices={}; this.data.slots.forEach(s=>{choices[s.id]=e.currentTarget.dataset.choice;}); this.setChoices(choices);
+  const choices={...this.data.choices}; this.data.slots.filter(s=>s.canChoose).forEach(s=>{choices[s.id]=e.currentTarget.dataset.choice;}); this.setChoices(choices);
  },
  async submit() {
-  if (this.data.busy || this.data.submitPending || !this.data.canVote) return;
+  if (this.data.busy || this.data.submitPending || this.data.proposalOpen || !this.data.canVote) return;
+  if(this.data.slots.some(s=>!this.data.states.some(state=>state.id===this.data.choices[s.id]))) {
+   this.setData({error:'请填写全部候选，可批量选择'});
+   wx.showModal({title:'还有时间未选择',content:'请为每个待填写时段选择可以、可协调或不行，再提交。',showCancel:false,confirmText:'OK',success:()=>{}});return;
+  }
+  if(this.data.slots.every(s=>this.data.choices[s.id]==='no')) {
+   this.proposalSnapshot={actor:store.actor(),choices:{...this.data.choices},knownSlotIds:this.data.slots.map(s=>s.id)};
+   this.setData({proposalOpen:true,proposalDate:'',proposalTime:'',proposalRange:'',proposalError:'',proposalMinDate:D.labelTime(Date.now()).slice(0,10)});return;
+  }
+  await this.saveTimeChoices('reply');
+ },
+ proposalField(e) {
+  if(this.data.submitPending)return;
+  const key=e.currentTarget.dataset.field;
+  if(!['proposalDate','proposalTime'].includes(key))return;
+  this.setData({[key]:e.detail.value,proposalError:''});
+  try {const start=D.dateTime(this.data.proposalDate,this.data.proposalTime);this.setData({proposalRange:C.rangeLabel(start,start+this.data.meeting.duration*60000)});}catch(_){this.setData({proposalRange:''});}
+ },
+ closeProposal() {if(!this.data.submitPending){this.proposalSnapshot=null;this.setData({proposalOpen:false,proposalError:''});}},
+ async confirmProposal() {
+  if(!this.data.proposalOpen || this.data.submitPending || this.data.busy)return;
+  try {
+   if(!this.proposalSnapshot || this.proposalSnapshot.actor!==store.actor())throw new Error('测试身份已变化，请返回后重新提交。');
+   if(!this.data.proposalDate || !this.data.proposalTime)throw new Error('请选择你可以参加的日期和开始时间。');
+   if(D.dateTime(this.data.proposalDate,this.data.proposalTime)<=Date.now())throw new Error('建议开始时间必须在未来。');
+   await this.saveTimeChoices('propose',{date:this.data.proposalDate,time:this.data.proposalTime});
+  }catch(e){this.setData({proposalError:e.message});}
+ },
+ goToSupplement() {
+  const slot=this.data.slots.find(s=>s.canChoose);
+  wx.pageScrollTo({selector:slot?'#vote-slot-'+slot.id:'#vote-options',duration:300});
+ },
+ async saveTimeChoices(action,extra={}) {
   const isOwner=!!(this.data.meeting && this.data.meeting.isOwner);
   this.setData({submitPending:true});
-  const saved=await this.run('reply',{choices:this.data.choices});
-  if (this.pageInactive || this.destroyed) {if (!this.destroyed) this.setData({submitPending:false});return;}
-  if (!saved) {this.setData({submitPending:false});return;}
+  const snapshot=action==='propose'?this.proposalSnapshot:{choices:this.data.choices,knownSlotIds:this.data.slots.map(s=>s.id)};
+  const saved=await this.run(action,{...snapshot,...extra});
+  if(this.destroyed)return;
+  if (!saved) {this.setData({submitPending:false,...(action==='propose'?{proposalError:this.data.error}:{})});return;}
+  this.setData({proposalOpen:false,proposalSaved:action==='propose'});
+  this.proposalSnapshot=null;
+  if(this.pageInactive){this.setData({submitPending:false});return;}
+  if(!this.data.hasSubmitted){
+   this.setData({submitPending:false});
+   wx.showModal({title:'选择已保存，还有新增时间',content:'另有新的候选时段需要你补充选择，原有选择已保留。',showCancel:false,confirmText:'去补选',success:()=>{if(!this.destroyed && !this.pageInactive)this.goToSupplement();}});return;
+  }
   if (isOwner) {
    this.setData({submitPending:false});
    wx.showToast({title:'已提交并更新汇总',icon:'success'});
@@ -147,8 +202,8 @@ Page({
   }
   this.lockSnapshotVersion=fresh.meeting.version;
   this.setData({lockPickerOpen:true,lockOptions:fresh.lockCandidates,lockPickerError:'',
-    lockEmptyReason:fresh.meeting.lockState.emptyReason,lockCheckedTime:D.labelTime(fresh.meeting.lockState.evaluatedAt),
-    lockListStyle:'height:'+Math.min(fresh.lockCandidates.length,4)*112+'rpx;'});
+    lockEmptyReason:fresh.meeting.lockState.emptyReason,lockCheckedTime:C.dateTimeLabel(fresh.meeting.lockState.evaluatedAt),
+    lockListStyle:'height:'+Math.min(fresh.lockCandidates.length,4)*144+'rpx;'});
  },
  copyLockDiagnostics() {
   const m=this.data.meeting;
@@ -171,7 +226,7 @@ Page({
    store.act(this.id,this.token,'lock',{slotId:id,version});
    this.setData({lockPickerOpen:false,linkDirty:false});this.refresh();
    const maybe=s.details.filter(d=>d.choice==='maybe').map(d=>d.name);
-   await new Promise(resolve=>wx.showModal({title:'已锁定成功',content:s.label+'（北京时间）。'+(maybe.length?'可协调：'+maybe.join('、')+'。':''),
+   await new Promise(resolve=>wx.showModal({title:'已锁定成功',content:C.rangeLabel(s.start,s.end)+'（北京时间）。'+(maybe.length?'可协调：'+maybe.join('、')+'。':''),
     showCancel:false,confirmText:'查看安排',success:resolve,fail:resolve}));
    if (!this.destroyed && !this.pageInactive) wx.pageScrollTo({selector:'#final-arrangement',duration:300});
   } catch(e) {
@@ -249,8 +304,8 @@ Page({
    }
    const f=m.slots.find(s=>s.id===m.finalSlot);
    if (!f) throw new Error('最终时段不存在，请刷新后重试');
-   const notice='会议：'+m.title+'\n目的：'+m.purpose+'\n时间：'+f.label+'（北京时间）'+
-    (m.meetingLink?'\n网络会议链接：'+m.meetingLink:'')+'\n参会名单：'+m.roles.map(r=>r.name).join('、')+'\n请查看小程序中的最终安排。';
+   const notice='会议主题：'+m.title+'\n参会名单：'+m.roles.map(r=>r.name).join('、')+'\n时间：'+C.rangeLabel(f.start,f.end)+'（北京时间）'+
+    (m.meetingLink?'\n网络会议链接：'+m.meetingLink:'')+'\n请查看小程序中的最终会议安排。';
    await new Promise((resolve,reject)=>wx.setClipboardData({data:notice,success:resolve,fail:()=>reject(new Error('会议通知未复制成功，请重试。已保存的链接不会丢失。'))}));
    if (!this.destroyed) wx.showToast({title:'会议通知已复制',icon:'success'});
   } catch(e) {if (!this.destroyed) this.setData({noticeError:e.message || '复制未成功，请重试'});}

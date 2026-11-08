@@ -17,3 +17,23 @@ button.invite-copy { width:100%; font-size:28rpx; margin-top:24rpx; }
 
 /* Keep all three single-line fields readable without vertical padding clipping. */
 input { height:88rpx; min-height:88rpx; padding:0 20rpx; font-size:28rpx; line-height:normal; }
+
+/* The overlay border does not change input height or shift the form. */
+.form-field { position:relative; }
+.form-field.has-error::after { content:""; position:absolute; top:-10rpx; bottom:-10rpx; left:-12rpx; right:-12rpx; border:2rpx dashed #c33e4b; border-radius:14rpx; pointer-events:none; }
+.field-error { color:#ae2f3b; font-size:24rpx; line-height:1.6; padding:8rpx 0 14rpx; }
+.action-error { padding:20rpx; text-align:center; }
+
+.row date-time-picker { flex:1 1 240rpx; min-width:0; }
+.daily-time-row, .deadline-row { flex-wrap:nowrap; }
+.daily-time-row date-time-picker { flex:1 1 0; }
+.deadline-row .deadline-date { flex:2 1 0; }
+.deadline-row .deadline-time { flex:1 1 0; }
+
+.member-row { border-bottom:1rpx solid #e8ecf3; padding:18rpx 0; }
+.member-inputs { display:flex; gap:12rpx; }
+.member-inputs input { margin:0; min-width:0; }
+.member-name { flex:2; }.member-note { flex:3; }
+.member-actions { display:flex; align-items:center; gap:12rpx; margin-top:12rpx; flex-wrap:wrap; }
+.member-kind { background:#f4f6fa; padding:12rpx; border-radius:10rpx; font-size:24rpx; }
+.member-actions button { margin:0; padding:0 14rpx; font-size:24rpx; line-height:60rpx; }

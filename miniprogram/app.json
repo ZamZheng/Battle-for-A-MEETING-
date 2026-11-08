@@ -3,7 +3,8 @@
     "pages/home/home",
     "pages/create/create",
     "pages/meeting/meeting",
-    "pages/identity/identity"
+    "pages/identity/identity",
+    "pages/edit-info/edit-info"
   ],
   "window": {
     "navigationBarTitleText": "会议时间协调",
@@ -12,5 +13,8 @@
     "backgroundColor": "#f5f7fb"
   },
   "style": "v2",
-  "sitemapLocation": "sitemap.json"
+  "sitemapLocation": "sitemap.json",
+  "usingComponents": {
+    "date-time-picker": "/components/date-time-picker/date-time-picker"
+  }
 }

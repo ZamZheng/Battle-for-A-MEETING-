@@ -1,0 +1,12 @@
+<view class="date-time-trigger {{centered ? 'centered' : ''}} {{disabled ? 'disabled' : ''}}" bindtap="openPicker" aria-role="button">{{displayValue || placeholder}}{{displayValue && suffix ? ' ' + suffix : ''}} ▾</view>
+<view wx:if="{{opened}}" class="date-time-mask" catchtap="ignore">
+ <view class="date-time-backdrop" catchtouchmove="ignore" catchtap="ignore"></view>
+ <view class="date-time-panel">
+  <view class="date-time-actions"><button catchtap="closePicker">取消</button><view>{{mode === 'date' ? '选择日期' : '选择时间'}}</view><button class="confirm" catchtap="confirmPicker" disabled="{{moving}}">确定</button></view>
+  <picker-view class="date-time-wheel" value="{{indices}}" indicator-style="height:100rpx;" bindchange="wheelChange" bindpickstart="wheelStart" bindpickend="wheelEnd" bindtouchcancel="wheelEnd">
+   <picker-view-column class="wheel-column {{mode === 'date' ? 'date-column-0' : ''}}"><view wx:for="{{columns[0]}}" wx:key="value" class="wheel-option">{{item.label}}</view></picker-view-column>
+   <picker-view-column class="wheel-column {{mode === 'date' ? 'date-column-1' : ''}}"><view wx:for="{{columns[1]}}" wx:key="value" class="wheel-option">{{item.label}}</view></picker-view-column>
+   <picker-view-column wx:if="{{mode === 'date'}}" class="wheel-column date-column-2"><view wx:for="{{columns[2]}}" wx:key="value" class="wheel-option">{{item.label}}</view></picker-view-column>
+  </picker-view>
+ </view>
+</view>

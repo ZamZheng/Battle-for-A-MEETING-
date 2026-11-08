@@ -2,80 +2,128 @@
 // All timestamps are epoch milliseconds; candidate inputs explicitly use Asia/Shanghai (+08:00).
 const clone = value => JSON.parse(JSON.stringify(value));
 const STATES = ['yes', 'maybe', 'no'];
-const LOCK_RULE_VERSION = 'vote-lock-state-v3';
-function fail(message) { throw new Error(message); }
-function text(value, label, max = 100) {
-  if (typeof value !== 'string' || !value.trim() || value.trim().length > max) fail(label + '不能为空或过长');
+const LOCK_RULE_VERSION = 'vote-lock-state-v4';
+function fail(message, field) { const error=new Error(message); if(field) error.field=field; throw error; }
+function text(value, label, max = 100, field) {
+  if (typeof value !== 'string' || !value.trim() || value.trim().length > max) fail(label + '不能为空或过长',field);
   return value.trim();
 }
-function dateTime(date, time) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) fail('日期或时间格式不正确');
+function dateTime(date, time, dateField, timeField = dateField) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) fail('日期或时间格式不正确',dateField);
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) fail('日期或时间格式不正确',timeField);
   const value = Date.parse(date + 'T' + time + ':00+08:00');
-  if (!Number.isFinite(value) || new Date(value + 8 * 3600000).toISOString().slice(0, 10) !== date) fail('日期不存在');
+  if (!Number.isFinite(value) || new Date(value + 8 * 3600000).toISOString().slice(0, 10) !== date) fail('日期不存在',dateField);
   return value;
 }
 function labelTime(value) { return new Date(value + 8 * 3600000).toISOString().slice(0,16).replace('T',' '); }
 function generateSlots(input, now = Date.now()) {
   const duration = Number(input.duration), interval = Number(input.interval);
-  if (!Number.isInteger(duration) || duration < 15 || duration > 480 || !Number.isInteger(interval) || interval < 15 || interval > 480) fail('时长与间隔须为15—480分钟整数');
-  if (!Array.isArray(input.dates) || !input.dates.length || input.dates.length > 14) fail('请选择1—14个日期');
+  if (!Number.isInteger(duration) || duration < 15 || duration > 480) fail('会议时长须为15—480分钟整数','duration');
+  if (!Number.isInteger(interval) || interval < 15 || interval > 480) fail('候选开始间隔须为15—480分钟整数','interval');
+  if (!Array.isArray(input.dates) || !input.dates.length || input.dates.length > 14) fail('请选择1—14个日期，并点击“添加此日期”','dates');
   const slots = [];
   [...new Set(input.dates)].sort().forEach(date => {
-    const from = dateTime(date, input.from), to = dateTime(date, input.to);
-    if (to <= from) fail('结束时间须晚于开始时间，不支持跨午夜');
+    const from = dateTime(date, input.from,'dates','timeRange'), to = dateTime(date, input.to,'dates','timeRange');
+    if (to <= from) fail('结束时间须晚于开始时间，不支持跨午夜','timeRange');
     for (let start = from; start + duration * 60000 <= to; start += interval * 60000) {
-      if (start <= now) fail('候选开始时间必须在未来');
+      if (start <= now) fail('候选开始时间必须在未来，请调整日期或每天的开始时间','dates');
       slots.push({ id: 's' + start, start, end: start + duration * 60000, label: labelTime(start) + '—' + labelTime(start + duration * 60000).slice(11) });
-      if (slots.length > 80) fail('候选过多，请缩小范围或增大间隔（最多80项）');
+      if (slots.length > 80) fail('候选过多，请缩小范围或增大间隔（最多80项）','interval');
     }
   });
-  if (!slots.length) fail('范围内无法安排一个完整会议时段');
+  if (!slots.length) fail('范围内无法安排一个完整会议时段，请延长每天可安排时间或缩短会议时长','timeRange');
   return slots;
 }
 // Split at the first ASCII/Chinese colon. Notes are recognition-only metadata.
 function roleFields(role) {
-  const raw=text(role.name,'称呼',300);
+  const raw=text(role.name,'称呼',300,'roster');
   const colon=raw.search(/[:：]/);
-  const name=text(colon<0?raw:raw.slice(0,colon),'称呼',40);
+  const name=text(colon<0?raw:raw.slice(0,colon),'称呼',40,'roster');
   const note=role.note===undefined ? (colon<0?'':raw.slice(colon+1).trim()) : role.note;
-  if (typeof note!=='string' || note.trim().length>200) fail('备注须为200字以内文字');
+  if (typeof note!=='string' || note.trim().length>200) fail('备注须为200字以内文字','roster');
   return {name,note:note.trim()};
 }
 function parseRoster(value) {
-  if (typeof value!=='string') fail('请填写参会名单');
+  if (typeof value!=='string') fail('请填写参会名单','roster');
   return value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean).map(line=>{
     const optional=/[?？]$/.test(line);
-    return {...roleFields({name:optional?line.slice(0,-1).trim():line}),required:!optional};
+    const raw=optional?line.slice(0,-1).trim():line;
+    const separator=raw.search(/[\s:：]/);
+    const name=separator<0?raw:raw.slice(0,separator);
+    const note=separator<0?'':raw.slice(separator).replace(/^[\s:：]+/,'').trim();
+    return {...roleFields({name,note}),required:!optional};
   });
 }
 function formatRoster(roles) {
-  return roles.map(role=>{const {name,note}=roleFields(role);return name+(note?'：'+note:'')+(role.required?'':'?');}).join('\n');
+  return roles.map(role=>{const {name,note}=roleFields(role);return name+(note?' '+note:'')+(role.required?'':'?');}).join('\n');
+}
+function prepareInfoEdit(m,payload) {
+  if(payload.infoVersion!==(m.infoVersion || 1))fail('会议信息已被修改，请重新打开编辑页后再保存。');
+  const title=text(payload.title,'会议主题',100,'title'),purpose=text(payload.purpose,'会议目的',1000,'purpose');
+  if(!Array.isArray(payload.roster) || !payload.roster.length || payload.roster.length>30)fail('预设名单须为1—30人','roster');
+  const ids=new Set(),names=new Set();
+  const existingIds=m.roles.map(r=>r.id);
+  let nextRoleIndex=Math.max(m.nextRoleIndex || 0,...existingIds.map(id=>/^r\d+$/.test(id)?Number(id.slice(1))+1:0));
+  const roles=payload.roster.map(row=>{
+    if(!row || typeof row!=='object')fail('请检查参会名单','roster');
+    const old=row.id?m.roles.find(r=>r.id===row.id):null;
+    if(row.id && (!old || ids.has(row.id)))fail('成员标识无效或重复，请重新打开编辑页','roster');
+    const name=text(row.name,'成员称呼',40,'roster');
+    if(/[\s:：]/.test(name) && (!old || old.name!==name))fail('成员称呼请不要包含空格或冒号，附加信息请填写在备注中','roster');
+    const fields=roleFields({name,note:row.note===undefined?'':row.note});
+    if(names.has(fields.name))fail('名单有重名称呼，请使用不同称呼区分；备注不能用于区分重名','roster');
+    if(typeof row.required!=='boolean')fail('请选择成员的必到或可选属性','roster');
+    const id=old?old.id:'r'+nextRoleIndex++;
+    ids.add(id);names.add(fields.name);
+    return {id,...fields,required:row.required};
+  });
+  if(!roles.some(r=>r.required))fail('请设置至少一位必到人员','roster');
+  const removedBindings=m.members.filter(p=>p.roleId && !ids.has(p.roleId)).map(p=>({actor:p.actor,roleId:p.roleId,name:(m.roles.find(r=>r.id===p.roleId)||{}).name || '成员'}));
+  return {title,purpose,roles,nextRoleIndex,removedBindings};
 }
 function normalizeMeeting(meeting) {
   // Read old colon-in-name records without rewriting IDs, replies or original storage.
   const roles=meeting.roles.map(role=>({...role,...roleFields(role)}));
+  const history=meeting.history || [];
+  const slots=meeting.slots.map(slot=>{
+    if(!slot.proposed)return slot;
+    // Keep the original role identity, but resolve its corrected display name.
+    // Recover older links from history even when a stale name snapshot exists.
+    let roleId=slot.proposerRoleId;
+    if(!roleId){
+      const index=history.findIndex(e=>e.action==='propose' && e.slotId===slot.id);
+      if(index<0)return slot;
+      const actor=history[index].actor;
+      let claim;
+      for(let i=0;i<index;i++)if(history[i].action==='claim' && history[i].targetActor===actor)claim=history[i];
+      roleId=claim?claim.to:(meeting.members.find(p=>p.actor===actor)||{}).roleId;
+    }
+    const role=roles.find(r=>r.id===roleId);
+    if(role)return {...slot,proposerRoleId:roleId,proposerName:role.name};
+    return roleId?{...slot,proposerRoleId:roleId}:slot;
+  });
   const members=meeting.members.map(person=>person.profile.nameSource==='role' ? {...person,profile:{...person.profile,
     name:person.roleId ? (roles.find(r=>r.id===person.roleId)||{}).name || person.profile.name : '旁听者'}} : person);
-  return {...meeting,roles,members};
+  return {...meeting,roles,members,slots};
 }
 function create(input, actor, id, token, now = Date.now()) {
   if (!actor) fail('缺少当前身份');
   const slots = generateSlots(input, now).filter(s => !(input.excluded || []).includes(s.id));
-  if (!slots.length) fail('请保留至少一个候选时段');
-  if (!Array.isArray(input.roster) || !input.roster.length || input.roster.length > 30) fail('预设名单须为1—30人');
+  if (!slots.length) fail('请保留至少一个候选时段','candidates');
+  if (!Array.isArray(input.roster) || !input.roster.length || input.roster.length > 30) fail('预设名单须为1—30人，请每行填写一位参会人员','roster');
   const names = new Set();
   const roles = input.roster.map((r, i) => {
     const {name,note} = roleFields(r);
-    if (names.has(name)) fail('名单有重名称呼，请使用不同称呼区分；备注不能用于区分重名');
+    if (names.has(name)) fail('名单有重名称呼，请使用不同称呼区分；备注不能用于区分重名','roster');
     names.add(name);
     return { id: 'r' + i, name, note, required: !!r.required };
   });
-  if (!roles.some(r => r.required)) fail('请设置至少一位必到人员');
+  if (!roles.some(r => r.required)) fail('请设置至少一位必到人员','roster');
   const deadline = Number(input.deadline);
-  if (!Number.isFinite(deadline) || deadline <= now || deadline > slots[0].start) fail('回复截止须在未来且不晚于最早候选开始时间');
-  return { id, token, inviteActive: true, owner: actor, title: text(input.title, '主题'), purpose: text(input.purpose, '会议目的', 1000),
+  if (!Number.isFinite(deadline) || deadline <= now || deadline > slots[0].start) fail('回复截止须在未来且不晚于最早候选开始时间','deadline');
+  return { id, token, inviteActive: true, owner: actor, title: text(input.title, '主题',100,'title'), purpose: text(input.purpose, '会议目的', 1000,'purpose'),
     timezone:'Asia/Shanghai', dates: [...new Set(input.dates)].sort(), duration:Number(input.duration), roles, slots,
-    members:[], replies:{}, deadline, status:'collecting', finalSlot:null, meetingLink:'', version:1, updatedAt:now, history:[], previousId:input.previousId || null };
+    members:[], replies:{}, deadline, status:'collecting', finalSlot:null, meetingLink:'', version:1, infoVersion:1, nextRoleIndex:roles.length, updatedAt:now, history:[], previousId:input.previousId || null };
 }
 function member(m, actor) { return m.members.find(x => x.actor === actor); }
 function authorize(m, actor, token, ownerOnly = false) {
@@ -93,6 +141,20 @@ function open(m, now) {
 function completeReply(m,actor) {
   const reply=m.replies[actor];
   return !!reply && m.slots.every(slot=>STATES.includes(reply[slot.id]));
+}
+function originalReplyComplete(m,actor) {
+  const reply=m.replies[actor];
+  return !!reply && m.slots.filter(s=>!s.proposed).every(s=>STATES.includes(reply[s.id]));
+}
+// A stale page may submit its known slots while newer proposals remain unanswered.
+// Merge only this actor's choices into the latest record; never replace another reply.
+function mergeReply(m,actor,payload) {
+  const known=payload.knownSlotIds || m.slots.map(s=>s.id), choices=payload.choices || {};
+  if(!Array.isArray(known) || !known.length || new Set(known).size!==known.length ||
+    known.some(id=>!m.slots.some(s=>s.id===id)) || m.slots.some(s=>!s.proposed && !known.includes(s.id)) ||
+    Object.keys(choices).length!==known.length || known.some(id=>!STATES.includes(choices[id]))) fail('请填写全部候选，可批量选择');
+  m.replies[actor]={...(m.replies[actor] || {}),...clone(choices)};
+  return known;
 }
 function summary(m) {
   m=normalizeMeeting(m);
@@ -144,9 +206,15 @@ function view(m, actor, token, now = Date.now()) {
   const computed=summary(m);
   const lockState=getLockState(m,now,computed);
   const slots = computed.map(s => named ? s : { ...s, details:[], blockers:[] });
+  const originalSubmitted=m.roles.filter(r=>m.members.some(p=>p.roleId===r.id && originalReplyComplete(m,p.actor))).length;
+  const supplementMissing=m.roles.filter(r=>m.members.some(p=>p.roleId===r.id && originalReplyComplete(m,p.actor) && !completeReply(m,p.actor))).map(r=>r.name);
   return { id:m.id, title:m.title, purpose:m.purpose, dates:m.dates, duration:m.duration, deadline:m.deadline,
     status:m.status === 'collecting' && now >= m.deadline ? 'closed' : m.status, finalSlot:m.finalSlot, meetingLink:m.meetingLink || '',
-    version:m.version, updatedAt:m.updatedAt, slots, lockState, self: self || null, isOwner, inviteActive:m.inviteActive,
+    version:m.version, infoVersion:m.infoVersion || 1, editableRoster:isOwner?m.roles.map(r=>({...r})):[], updatedAt:m.updatedAt, slots, lockState, self: self || null, isOwner, inviteActive:m.inviteActive,
+    hasProposals:m.slots.some(s=>s.proposed), originalSubmitted,
+    supplementMissing:isOwner?supplementMissing:[],
+    initialMissing:isOwner?m.roles.filter(r=>!m.members.some(p=>p.roleId===r.id && originalReplyComplete(m,p.actor))).map(r=>r.name):[],
+    selfNeedsSupplement:!!self && !!self.roleId && originalReplyComplete(m,actor) && !completeReply(m,actor),
     roles:m.roles.map(r => ({ ...r, occupied:m.members.some(p => p.roleId === r.id) })).sort((a,b) => Number(b.required)-Number(a.required)),
     members:named ? m.members.map(p => ({roleId:p.roleId, profile:p.profile, submitted:!!p.roleId && completeReply(m,p.actor), ...(isOwner ? {actor:p.actor} : {})})) : [],
     reply:self ? m.replies[actor] || {} : {}, selfSubmitted:!!self && !!self.roleId && completeReply(m,actor), submitted:m.roles.filter(r => m.members.some(p => p.roleId === r.id && completeReply(m,p.actor))).length,
@@ -157,9 +225,22 @@ function view(m, actor, token, now = Date.now()) {
 function apply(original, actor, token, action, payload = {}, now = Date.now()) {
   authorize(original, actor, token);
   const m = normalizeMeeting(clone(original));
-  const ownerActions = ['lock','extend','cancel','revoke','move','meetingLink'];
+  const ownerActions = ['lock','extend','cancel','revoke','move','meetingLink','editInfo'];
   if (ownerActions.includes(action)) authorize(m, actor, token, true);
-  if (action === 'claim' || action === 'move') {
+  if(action==='editInfo') {
+    open(m,now);
+    const edit=prepareInfoEdit(m,payload);
+    const acknowledged=payload.confirmedRemovals || [];
+    const signature=rows=>rows.map(p=>JSON.stringify([p.actor,p.roleId])).sort().join('|');
+    if(!Array.isArray(acknowledged) || acknowledged.some(p=>!p || typeof p.actor!=='string' || typeof p.roleId!=='string') || signature(acknowledged)!==signature(edit.removedBindings))fail('待删除成员的认领情况已变化，请重新检查并确认后保存。');
+    m.title=edit.title;m.purpose=edit.purpose;m.roles=edit.roles;m.nextRoleIndex=edit.nextRoleIndex;
+    for(const person of m.members){
+      if(person.roleId && !m.roles.some(r=>r.id===person.roleId))person.roleId=null;
+      if(person.profile.nameSource==='role')person.profile.name=person.roleId?m.roles.find(r=>r.id===person.roleId).name:'旁听者';
+    }
+    m.infoVersion=(m.infoVersion || 1)+1;
+    m.history.push({action:'editInfo',actor,removedBindings:edit.removedBindings,at:now});
+  } else if (action === 'claim' || action === 'move') {
     open(m, now);
     const targetActor = action === 'move' ? payload.targetActor : actor;
     const old = member(m, targetActor);
@@ -181,12 +262,27 @@ function apply(original, actor, token, action, payload = {}, now = Date.now()) {
     if (old) { old.roleId = roleId; old.profile = profile; }
     else m.members.push({ actor:targetActor, roleId, profile });
     m.history.push({action:'claim', actor, targetActor, from:old ? member(original,targetActor).roleId : null, to:roleId, at:now});
-  } else if (action === 'reply') {
+  } else if (action === 'reply' || action === 'propose') {
     open(m, now);
     const person = member(m, actor);
     if (!person || !person.roleId) fail('请先认领参会角色；仅接收信息者不投票');
-    if (Object.keys(payload.choices || {}).length !== m.slots.length || m.slots.some(s => !STATES.includes(payload.choices[s.id]))) fail('请填写全部候选，可批量选择');
-    m.replies[actor] = clone(payload.choices);
+    const known=mergeReply(m,actor,payload);
+    if(action==='propose') {
+      if(known.some(id=>payload.choices[id]!=='no')) fail('仅全部选择不行时可以补提一个时间');
+      const start=dateTime(payload.date,payload.time);
+      if(start<=now) fail('建议开始时间必须在未来');
+      const end=start+m.duration*60000;
+      let slot=m.slots.find(s=>s.start===start && s.end===end);
+      if(!slot) {
+        if(m.slots.length>=80) fail('候选已达80项，请联系发起人整理或开启新一轮');
+        const endLabel=labelTime(end),startLabel=labelTime(start);
+        slot={id:'s'+start,start,end,label:startLabel+'—'+(startLabel.slice(0,10)===endLabel.slice(0,10)?endLabel.slice(11):endLabel),proposed:true,proposerRoleId:person.roleId,proposerName:m.roles.find(r=>r.id===person.roleId).name,addedVersion:m.version+1};
+        m.slots.push(slot);
+        m.dates=[...new Set([...m.dates,startLabel.slice(0,10)])].sort();
+        m.history.push({action:'propose',actor,slotId:slot.id,at:now});
+      }
+      m.replies[actor][slot.id]='yes';
+    }
   } else if (action === 'lock') {
     if (m.status !== 'collecting') fail('会议已锁定或取消');
     if (m.slots.find(s => s.id === payload.slotId && s.start <= now)) fail('不能锁定已经开始的时段');
@@ -216,4 +312,4 @@ function apply(original, actor, token, action, payload = {}, now = Date.now()) {
   m.version++; m.updatedAt = now;
   return m;
 }
-module.exports = { LOCK_RULE_VERSION, getLockState, create, generateSlots, dateTime, labelTime, summary, view, apply, authorize, clone, parseRoster, formatRoster };
+module.exports = { LOCK_RULE_VERSION, getLockState, create, generateSlots, dateTime, labelTime, summary, view, apply, authorize, clone, parseRoster, formatRoster, prepareInfoEdit };

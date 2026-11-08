@@ -30,4 +30,14 @@ for(const page of app.pages){
   if(typeof definition[event[1]]!=='function')throw Error(page+' 缺少事件方法 '+event[1]);
  }
 }
-console.log(`JS语法 ${js} 文件、JSON ${json} 文件、${app.pages.length} 个页面入口检查通过（不等于微信编译验证）`);
+for(const relative of Object.values(app.usingComponents || {})) {
+ const prefix='miniprogram/'+relative.replace(/^\//,'');
+ for(const ext of ['js','json','wxml','wxss'])if(!fs.existsSync(prefix+'.'+ext))throw Error('缺少组件文件 '+prefix+'.'+ext);
+ if(!JSON.parse(fs.readFileSync(prefix+'.json','utf8')).component)throw Error('缺少component配置');
+ const file=path.resolve(prefix+'.js');let component;
+ vm.runInNewContext(fs.readFileSync(file,'utf8'),{require:createRequire(file),Component:c=>{component=c;},Date});
+ const markup=fs.readFileSync(prefix+'.wxml','utf8');
+ for(const expression of markup.matchAll(/\{\{([\s\S]*?)\}\}/g))new vm.Script('('+expression[1]+')');
+ for(const event of markup.matchAll(/(?:bind|catch)[a-z]+=["']([A-Za-z_$][\w$]*)["']/g))if(typeof component.methods[event[1]]!=='function')throw Error('缺少组件事件 '+event[1]);
+}
+console.log(`JS语法 ${js} 文件、JSON ${json} 文件、${app.pages.length} 个页面入口及自定义组件检查通过（不等于微信编译验证）`);

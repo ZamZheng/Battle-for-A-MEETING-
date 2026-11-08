@@ -1,10 +1,10 @@
 <view class="container identity-page">
  <view class="identity-title">认领你的角色</view>
- <view wx:if="{{error}}" class="error">{{error}}</view>
+ <view wx:if="{{error && !meeting}}" class="error">{{error}}</view>
  <block wx:if="{{meeting}}">
   <block wx:if="{{editable}}">
    <view class="avatar-section">
-    <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="chooseAvatar" disabled="{{busy || savingAvatar}}" loading="{{savingAvatar}}" aria-label="选择头像">
+    <button class="avatar-button" size="mini" open-type="chooseAvatar" bindchooseavatar="chooseAvatar" disabled="{{busy || savingAvatar || noticePending}}" loading="{{savingAvatar}}" aria-label="选择头像">
      <image wx:if="{{avatar}}" class="identity-avatar" src="{{avatar}}" mode="aspectFill"/>
      <view wx:else class="avatar-placeholder">选头像</view>
     </button>

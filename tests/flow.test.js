@@ -26,12 +26,13 @@ function page(name,wx) {
  return {...def,data:JSON.parse(JSON.stringify(def.data)),setData(patch,callback){Object.assign(this.data,patch);if(callback)callback();}};
 }
 const event=(value,dataset={})=>({detail:{value},currentTarget:{dataset}});
+const rosterRows=value=>D.parseRoster(value).map((r,i)=>({...r,key:'new-'+(i+1)}));
 test('真实页面控制器+本地存储完整流程：创建→独立身份页→确认跳转→提交→切换身份→锁定→新一轮',async()=>{
  const previous=global.wx,wx=mockWx();global.wx=wx;
  try {
   const date=new Date(Date.now()+2*86400000+8*3600000).toISOString().slice(0,10);
   const create=page('create',wx);create.onLoad({});
-  create.setData({title:'团队会议',purpose:'安排下一步',dates:[date],from:'09:00',to:'10:00',duration:'60',interval:'30',deadlineDate:date,deadlineTime:'08:00',roster:'甲\n乙\n丙\n丁?'});
+  create.setData({title:'团队会议',purpose:'安排下一步',dates:[date],from:'09:00',to:'10:00',duration:'60',interval:'30',deadlineDate:date,deadlineTime:'08:00',rows:rosterRows('甲\n乙\n丙\n丁?')});
   create.preview();assert.equal(create.data.slots.length,1);await create.publish();
   assert.equal(wx.routes.length,0);
   const query=new URLSearchParams(create.data.publishedInvite.path.split('?')[1]),id=query.get('id'),token=query.get('token');
@@ -101,8 +102,8 @@ test('身份页：只选头像无需打字，保存失败不跳转；角色被�
   const identity=page('identity',wx);identity.onLoad({id,token});identity.onShow();
   await identity.selectRole(event('',{index:'0'}));assert.match(identity.data.error,/头像/);assert.equal(wx.routes.length,0);
   identity.chooseAvatar({detail:{avatarUrl:'wxfile://temp/a.png'}});wx.failSave(true);
-  await identity.confirmIdentity(event('',{}));assert.match(identity.data.error,/存储空间/);assert.equal(wx.routes.length,0);assert.equal(store.view(id,token).self,null);
-  wx.failSave(false);await identity.confirmIdentity(event('',{}));assert.match(wx.routes.at(-1),/pages\/meeting\/meeting/);
+  await identity.selectRole(event('',{index:'0'}));assert.match(identity.data.error,/存储空间/);assert.equal(identity.data.roleIndex,-1);assert.equal(wx.routes.length,0);assert.equal(store.view(id,token).self,null);
+  wx.failSave(false);await identity.selectRole(event('',{index:'0'}));assert.match(wx.routes.at(-1),/pages\/meeting\/meeting/);
   store.setActor('demo-b');const other=page('identity',wx);other.onLoad({id,token});other.onShow();
   other.chooseAvatar({detail:{avatarUrl:'wxfile://temp/b.png'}});other.setData({roleIndex:0});
   const before=wx.routes.length;await other.confirmIdentity(event('',{}));assert.match(other.data.error,/已被认领/);assert.equal(wx.routes.length,before);assert.equal(store.view(id,token).self,null);
@@ -167,7 +168,7 @@ test('取消角色确认停留原页不绑定；再次点击确认才跳转',asy
   const {id,token}=fixture(wx);store.setActor('demo-a');
   const identity=page('identity',wx);identity.onLoad({id,token});identity.onShow();identity.chooseAvatar({detail:{avatarUrl:'wxfile://temp/a.png'}});
   let message='';wx.showModal=o=>{message=o.content;o.success({confirm:false});};
-  await identity.selectRole(event('',{index:'0'}));assert.match(message,/甲/);assert.equal(store.view(id,token).self,null);assert.equal(wx.routes.length,0);
+  await identity.selectRole(event('',{index:'0'}));assert.match(message,/甲/);assert.equal(identity.data.roleIndex,-1);assert.equal(store.view(id,token).self,null);assert.equal(wx.routes.length,0);
   wx.showModal=o=>o.success({confirm:true});await identity.selectRole(event('',{index:'0'}));
   assert.equal(store.view(id,token).self.roleId,'r0');assert.equal(wx.routes.length,1);
  }finally{global.wx=previous;}
@@ -232,13 +233,13 @@ test('名单备注在创建/新一轮保留，认领选项可读；发起人工�
  const previous=global.wx,wx=mockWx();global.wx=wx;
  try {
   const date=new Date(Date.now()+3*86400000+8*3600000).toISOString().slice(0,10);
-  const create=page('create',wx);create.setData({title:'称呼测试',purpose:'讨论',dates:[date],deadlineDate:date,deadlineTime:'08:00',roster:'C:提供管理建议\nD：主持会议?'});
+  const create=page('create',wx);create.setData({title:'称呼测试',purpose:'讨论',dates:[date],deadlineDate:date,deadlineTime:'08:00',rows:rosterRows('C:提供管理建议\nD：主持会议?')});
   const input=create.input();assert.equal(input.roster[0].name,'C');assert.equal(input.roster[0].note,'提供管理建议');
   const {id,token}=store.create(input);store.setActor('demo-c');
   const identity=page('identity',wx);identity.onLoad({id,token});identity.onShow();assert.equal(identity.data.roles[0].name,'C');assert.equal(identity.data.roles[0].note,'提供管理建议');
   identity.chooseAvatar({detail:{avatarUrl:'wxfile://temp/c.png'}});await identity.selectRole(event('',{index:'0'}));
   store.setActor('demo-owner');const m=page('meeting',wx);m.onLoad({id});m.onShow();assert.equal(m.data.managed[0].label,'C');assert.equal(m.data.moveRoles[1].label,'C');
-  const round=page('create',wx);round.onLoad({previous:id});assert.equal(round.data.roster,'C：提供管理建议\nD：主持会议?');
+  const round=page('create',wx);round.onLoad({previous:id});assert.equal(D.formatRoster(round.data.rows),'C 提供管理建议\nD 主持会议?');
  }finally{global.wx=previous;}
 });
 test('旧版冒号姓名兼容：角色ID、头像、回复均保留，旧存储不因读取被重写',()=>{
@@ -435,7 +436,7 @@ test('更正写入失败也就地弹窗，解除锁定后可重试且不改变�
 function publishPage(wx){
  const date=new Date(Date.now()+3*86400000+8*3600000).toISOString().slice(0,10);
  const c=page('create',wx);c.onLoad({});c.onShow();
- c.setData({title:'邀请发布测试',purpose:'讨论安排',dates:[date],from:'09:00',to:'11:00',duration:'60',interval:'30',deadlineDate:date,deadlineTime:'08:00',roster:'A：主持\nB：建议?'});c.preview();return c;
+ c.setData({title:'邀请发布测试',purpose:'讨论安排',dates:[date],from:'09:00',to:'11:00',duration:'60',interval:'30',deadlineDate:date,deadlineTime:'08:00',rows:rosterRows('A：主持\nB：建议?')});c.preview();return c;
 }
 test('发布后先展示会议邀请摘要，不立即返回；只包含保留候选及短称呼',async()=>{
  const previous=global.wx,wx=mockWx();global.wx=wx;
@@ -546,7 +547,7 @@ test('取消修改丢弃草稿，保存失败保留填写状态，均不覆盖�
  const previous=global.wx,wx=mockWx();global.wx=wx;
  try {
   const {m,id,token}=submittedPage(wx);m.beginEditTime();m.batch(event('',{choice:'no'}));m.cancelEditTime();assert.equal(m.data.canVote,false);assert.ok(Object.values(m.data.choices).every(c=>c==='yes'));
-  m.beginEditTime();m.batch(event('',{choice:'no'}));wx.failSave(true);await m.submit();assert.equal(m.data.canVote,true);assert.equal(m.data.editingVote,true);assert.equal(m.data.submissionSuccess,false);assert.ok(Object.values(store.view(id,token).reply).every(c=>c==='yes'));
+  m.beginEditTime();m.batch(event('',{choice:'maybe'}));wx.failSave(true);await m.submit();assert.equal(m.data.canVote,true);assert.equal(m.data.editingVote,true);assert.equal(m.data.submissionSuccess,false);assert.ok(Object.values(store.view(id,token).reply).every(c=>c==='yes'));
  }finally{global.wx=previous;}
 });
 test('已截止/锁定不能进入修改；发起人修改自己的回复后也回只读详情',async()=>{
@@ -557,8 +558,8 @@ test('已截止/锁定不能进入修改；发起人修改自己的回复后也�
    if(status==='closed')raw.deadline=Date.now()-1;else{raw.status='locked';raw.finalSlot=raw.slots[0].id;}
    m.beginEditTime();assert.equal(m.data.editingVote,false);assert.equal(m.data.canVote,false);
   }
-  const wx=mockWx();global.wx=wx;const {m,id,token}=submittedPage(wx,true);m.beginEditTime();m.batch(event('',{choice:'no'}));await m.submit();
-  assert.equal(m.data.canVote,false);assert.equal(m.data.submissionSuccess,false);assert.equal(wx.relaunches.length,0);assert.ok(Object.values(store.view(id,token).reply).every(c=>c==='no'));
+  const wx=mockWx();global.wx=wx;const {m,id,token}=submittedPage(wx,true);m.beginEditTime();m.batch(event('',{choice:'maybe'}));await m.submit();
+  assert.equal(m.data.canVote,false);assert.equal(m.data.submissionSuccess,false);assert.equal(wx.relaunches.length,0);assert.ok(Object.values(store.view(id,token).reply).every(c=>c==='maybe'));
  }finally{global.wx=previous;}
 });
 test('发起人未认领参会角色不催填，认领后提醒；草稿仍提醒，成功提交后消失',async()=>{
@@ -585,6 +586,7 @@ test('发起人填写网络会议链接并复制时保存，其他成员重进�
  try {
   const {m,id,token}=lockPage(wx);await m.lock(event('',{id:m.data.slots[0].id}));
   const url='https://meeting.example.com/join?pwd=123';m.meetingLinkChanged(event(url));assert.equal(store.view(id).meetingLink,'');await m.copyNotice();assert.equal(store.view(id).meetingLink,url);assert.match(wx.clipboards.at(-1),/网络会议链接：https:\/\/meeting.example.com\/join\?pwd=123/);
+  const lines=wx.clipboards.at(-1).split('\n');assert.equal(lines.length,5);assert.match(lines[0],/^会议主题：/);assert.match(lines[1],/^参会名单：/);assert.match(lines[2],/^时间：/);assert.equal(lines[3],'网络会议链接：'+url);assert.equal(lines[4],'请查看小程序中的最终会议安排。');assert.doesNotMatch(wx.clipboards.at(-1),/\n目的：/);
   store.setActor('demo-a');const attendee=page('meeting',wx);attendee.onLoad({id,token});attendee.onShow();assert.equal(attendee.data.meeting.meetingLink,url);attendee.meetingLinkChanged(event('https://wrong.example.com'));assert.equal(attendee.data.meetingLinkInput,url);
   await attendee.copyNotice();assert.ok(wx.clipboards.at(-1).includes(url));assert.ok(!wx.clipboards.at(-1).includes('wrong.example.com'));
  }finally{global.wx=previous;}
@@ -761,5 +763,445 @@ test('空候选显示明确筛选原因，排查复制不含邀请token、头像
   const {m,id,token}=fourPersonLockPicker(wx);store.act(id,token,'reply',{choices:Object.fromEntries(store.view(id,token).slots.map(s=>[s.id,'no']))});m.openLockPicker();assert.equal(m.data.lockOptions.length,0);assert.match(m.data.lockEmptyReason,/每个候选时段都有人/);
   m.copyLockDiagnostics();const copied=wx.clipboards.at(-1),diagnostic=JSON.parse(copied);assert.equal(diagnostic.submitted,4);assert.equal(diagnostic.options.length,3);assert.ok(diagnostic.options.every(row=>row.result==='conflict'));
   assert.ok(!copied.includes(token));assert.ok(!copied.includes('avatar'));assert.ok(!copied.includes('meetingLink'));
+ }finally{global.wx=previous;}
+});
+
+test('创建校验：空名单立即弹OK，确认前不滚动或创建，重复提交不叠窗',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const c=publishPage(wx),modals=[];c.setData({rows:[]});wx.showModal=o=>modals.push(o);
+  await c.publish();assert.equal(modals.length,1);assert.equal(modals[0].showCancel,false);assert.equal(modals[0].confirmText,'OK');
+  assert.match(modals[0].title,/预设参会名单/);assert.match(modals[0].content,/1—30/);
+  assert.equal(c.data.validationField,'roster');assert.equal(c.data.validationPending,true);assert.equal(wx.scrolls.length,0);assert.equal(store.list().length,0);
+  await c.publish();c.preview();assert.equal(modals.length,1);
+  modals[0].success({confirm:true});assert.equal(c.data.validationPending,false);assert.equal(wx.scrolls[0].selector,'#create-field-roster');
+  c.field(event('另一主题',{field:'title'}));assert.equal(c.data.validationField,'roster');
+  c.editRosterField();assert.equal(c.data.validationField,'');assert.equal(c.data.validationMessage,'');
+  c.addMember();c.rosterField(event('甲',{key:c.data.rows.at(-1).key,field:'name'}));c.addMember();c.rosterField(event('乙',{key:c.data.rows.at(-1).key,field:'name'}));wx.showModal=o=>o.success({confirm:true});await c.publish();assert.ok(c.data.publishedInvite);assert.equal(store.list().length,1);
+ }finally{global.wx=previous;}
+});
+
+test('创建校验：确认OK后按实际位置居中，不清除已填写内容',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const c=publishPage(wx);c.setData({title:''});let modal,selected;
+  wx.showModal=o=>{modal=o;};wx.getWindowInfo=()=>({windowHeight:800});
+  wx.createSelectorQuery=()=>({in(p){assert.equal(p,c);return this;},select(s){selected=s;return this;},boundingClientRect(){return this;},selectViewport(){return this;},scrollOffset(){return this;},exec(cb){cb([{top:100,height:120},{scrollTop:1000}]);}});
+  const roster=JSON.stringify(c.data.rows);await c.publish();assert.equal(c.data.validationField,'title');assert.equal(wx.scrolls.length,0);
+  modal.success({confirm:true});assert.equal(selected,'#create-field-title');assert.equal(wx.scrolls[0].scrollTop,760);assert.equal(JSON.stringify(c.data.rows),roster);
+ }finally{global.wx=previous;}
+});
+
+test('创建校验：时长、间隔、日期和时间范围分别定位，重新输入/选择即清标记',()=>{
+ const wx=mockWx(),c=page('create',wx),modals=[];wx.showModal=o=>{modals.push(o);o.success({confirm:true});};
+ c.addDate();c.field(event('1',{field:'duration'}));c.preview();assert.equal(c.data.validationField,'duration');
+ c.editField(event('',{field:'duration'}));assert.equal(c.data.validationField,'');c.field(event('60',{field:'duration'}));
+ c.field(event('1',{field:'interval'}));c.preview();assert.equal(c.data.validationField,'interval');c.field(event('30',{field:'interval'}));assert.equal(c.data.validationField,'');
+ c.setData({dates:[]});c.preview();assert.equal(c.data.validationField,'dates');assert.match(modals.at(-1).content,/添加此日期/);
+ c.addDate();assert.equal(c.data.validationField,'');c.field(event('08:00',{field:'to'}));c.preview();assert.equal(c.data.validationField,'timeRange');
+ c.editField(event('',{field:'from'}));assert.equal(c.data.validationField,'');c.field(event('12:00',{field:'to'}));c.preview();assert.ok(c.data.slots.length);
+});
+
+test('创建校验：重复称呼、目的、截止时间及候选都有正确定位',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const c=publishPage(wx);c.setData({rows:rosterRows('甲\n甲')});await c.publish();assert.equal(c.data.validationField,'roster');assert.match(c.data.validationMessage,/重名/);
+  c.removeMember(event('',{key:c.data.rows[1].key}));c.field(event('',{field:'purpose'}));await c.publish();assert.equal(c.data.validationField,'purpose');
+  c.field(event('讨论',{field:'purpose'}));c.field(event('bad',{field:'deadlineTime'}));await c.publish();assert.equal(c.data.validationField,'deadline');
+  c.field(event('08:00',{field:'deadlineTime'}));assert.equal(c.data.validationField,'');
+  c.setData({deadlineDate:'2020-01-01'});await c.publish();assert.equal(c.data.validationField,'deadline');
+  c.field(event(c.data.dates[0],{field:'deadlineDate'}));
+  for(const s of c.data.slots)c.toggleSlot(event('',{id:s.id}));await c.publish();assert.equal(c.data.validationField,'candidates');
+  c.toggleSlot(event('',{id:c.data.slots[0].id}));assert.equal(c.data.validationField,'');
+  c.setData({slots:[]});await c.publish();assert.equal(c.data.validationField,'candidates');assert.equal(store.list().length,0);
+ }finally{global.wx=previous;}
+});
+
+test('创建校验：存储失败弹窗但不错误标记输入栏，原内容保留并可重试',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const c=publishPage(wx),modals=[];wx.showModal=o=>{modals.push(o);o.success({confirm:true});};
+  const values=()=>JSON.stringify(['title','purpose','dates','from','to','duration','interval','deadlineDate','deadlineTime','rows','excluded','slots'].map(k=>c.data[k]));const draft=values();
+  wx.failSave(true);await c.publish();assert.equal(modals.at(-1).title,'操作未完成');assert.equal(modals.at(-1).confirmText,'OK');assert.match(modals.at(-1).content,/存储/);
+  assert.equal(c.data.validationField,'');assert.equal(wx.scrolls.length,0);assert.equal(c.data.publishedInvite,null);assert.equal(values(),draft);
+  wx.failSave(false);await c.publish();assert.ok(c.data.publishedInvite);
+ }finally{global.wx=previous;}
+});
+
+test('创建校验：页面隐藏或卸载后，旧弹窗确认不触发滚动',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  for(const action of ['onHide','onUnload']){
+   const c=publishPage(wx);c.setData({rows:[]});let modal;wx.showModal=o=>{modal=o;};
+   await c.publish();c[action]();modal.success({confirm:true});assert.equal(wx.scrolls.length,0);assert.equal(store.list().length,0);
+  }
+ }finally{global.wx=previous;}
+});
+
+test('创建校验：居中滚动不会越过顶部，长名单保持标题和输入开头可见',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  for(const [rect,offset,want] of [[{top:20,height:100},0,0],[{top:200,height:1500},1000,1080]]){
+   const c=publishPage(wx);c.setData({rows:[]});wx.getWindowInfo=()=>({windowHeight:800});
+   wx.createSelectorQuery=()=>({in(){return this;},select(){return this;},boundingClientRect(){return this;},selectViewport(){return this;},scrollOffset(){return this;},exec(cb){cb([rect,{scrollTop:offset}]);}});
+   await c.publish();assert.equal(wx.scrolls.at(-1).scrollTop,want);
+  }
+ }finally{global.wx=previous;}
+});
+
+test('身份页：未选头像弹单按钮OK，未认领角色不保留选中状态，弹窗期间不重复提示',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx);store.setActor('demo-a');const p=page('identity',wx);p.onLoad({id,token});p.onShow();
+  const modals=[];wx.showModal=o=>modals.push(o);
+  await p.selectRole(event('',{index:'1'}));assert.equal(modals.length,1);assert.equal(modals[0].title,'请先选择头像');assert.match(modals[0].content,/再点击下方角色/);
+  assert.equal(modals[0].showCancel,false);assert.equal(modals[0].confirmText,'OK');assert.equal(p.data.roleIndex,-1);assert.equal(p.data.noticePending,true);
+  await p.selectRole(event('',{index:'0'}));assert.equal(modals.length,1);assert.equal(store.view(id,token).self,null);assert.equal(wx.routes.length,0);
+  modals[0].success({confirm:true});assert.equal(p.data.noticePending,false);assert.equal(p.data.roleIndex,-1);
+  p.chooseAvatar({detail:{avatarUrl:'wxfile://temp/current.png'}});assert.equal(p.data.avatar,'wxfile://saved/current.png');assert.equal(p.data.roleIndex,-1);assert.equal(store.view(id,token).self,null);
+  wx.showModal=o=>o.success({confirm:true});await p.selectRole(event('',{index:'1'}));assert.equal(store.view(id,token).self.roleId,'r1');assert.equal(store.view(id,token).self.profile.avatar,'wxfile://saved/current.png');
+ }finally{global.wx=previous;}
+});
+
+test('身份页：缺头像的旧选中状态也清除，补头像后必须重新点击角色',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx);store.setActor('demo-a');const p=page('identity',wx);p.onLoad({id,token});p.onShow();p.setData({roleIndex:0});
+  await p.confirmIdentity();assert.equal(p.data.roleIndex,-1);assert.equal(store.view(id,token).self,null);
+  p.chooseAvatar({detail:{avatarUrl:'wxfile://temp/a.png'}});assert.equal(p.data.roleIndex,-1);assert.equal(wx.routes.length,0);
+  await p.confirmIdentity();assert.equal(store.view(id,token).self,null);assert.match(p.data.error,/选择一个角色/);
+  await p.selectRole(event('',{index:'0'}));assert.equal(store.view(id,token).self.roleId,'r0');
+ }finally{global.wx=previous;}
+});
+
+test('身份页：更换头像使用新文件，保存失败保留原头像并清除角色选择，不自动认领',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx);store.setActor('demo-a');const p=page('identity',wx);p.onLoad({id,token});p.onShow();
+  p.chooseAvatar({detail:{avatarUrl:'wxfile://temp/first.png'}});assert.equal(p.data.avatar,'wxfile://saved/first.png');p.setData({roleIndex:0});
+  let pending;wx.getFileSystemManager=()=>({saveFile(o){pending=o;}});
+  p.chooseAvatar({detail:{avatarUrl:'wxfile://temp/second.png'}});assert.equal(p.data.roleIndex,-1);assert.equal(p.data.savingAvatar,true);
+  await p.selectRole(event('',{index:'1'}));assert.equal(p.data.roleIndex,-1);assert.equal(store.view(id,token).self,null);
+  pending.fail();pending.complete();assert.equal(p.data.avatar,'wxfile://saved/first.png');assert.equal(p.data.roleIndex,-1);assert.equal(p.data.savingAvatar,false);
+  p.chooseAvatar({detail:{avatarUrl:'wxfile://temp/second.png'}});pending.success({savedFilePath:'wxfile://saved/second.png'});pending.complete();assert.equal(p.data.avatar,'wxfile://saved/second.png');
+  assert.equal(store.view(id,token).self,null);assert.equal(wx.routes.length,0);
+  await p.selectRole(event('',{index:'1'}));assert.equal(store.view(id,token).self.profile.avatar,'wxfile://saved/second.png');
+ }finally{global.wx=previous;}
+});
+
+test('首页滚动会议清单保留全部会议，超出四条仍可打开；提交高亮定位窗口内部',()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id}=fixture(wx),base=wx.storage.get('meeting-battle.mock.v1').meetings[id];
+  const meetings={};for(let i=0;i<7;i++)meetings['list-'+i]={...D.clone(base),id:'list-'+i,title:'会议'+i,updatedAt:Date.now()+i,status:i===1?'cancelled':'collecting'};
+  wx.storage.set('meeting-battle.mock.v1',{meetings});
+  const home=page('home',wx);home.onLoad({highlight:'list-0'});home.onShow();
+  assert.equal(home.data.meetings.length,7);assert.equal(home.data.meetings[0].id,'list-6');assert.ok(home.data.meetings.some(m=>m.status==='cancelled'));
+  assert.equal(home.data.meetingScrollTarget,'');home.onReady();assert.equal(home.data.meetingScrollTarget,'home-meeting-6');assert.equal(wx.scrolls[0].selector,'#my-meetings');
+  home.refresh();assert.equal(wx.scrolls.length,1);home.open(event('',{id:'list-0'}));assert.match(wx.routes.at(-1),/id=list-0/);assert.equal(home.data.highlightId,'');assert.equal(home.data.meetingScrollTarget,'');
+  home.switchActor(event('1'));assert.equal(home.data.meetings.length,0);assert.equal(home.data.meetingScrollTarget,'');
+ }finally{global.wx=previous;}
+});
+
+function chooseProposal(m,start){
+ const stamp=D.labelTime(start);m.proposalField(event(stamp.slice(0,10),{field:'proposalDate'}));m.proposalField(event(stamp.slice(11),{field:'proposalTime'}));
+}
+test('全部不行先补提：不提前保存，允许早于截止，保存后新时段可以并显示新反馈',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {m,id,token}=voterPage(wx);m.batch(event('',{choice:'no'}));const version=store.view(id,token).version;
+  await m.submit();assert.equal(m.data.proposalOpen,true);assert.equal(m.data.submissionSuccess,false);assert.equal(store.view(id,token).version,version);
+  await m.confirmProposal();assert.match(m.data.proposalError,/请选择/);assert.equal(store.view(id,token).version,version);
+  chooseProposal(m,m.data.meeting.deadline-3600000);await m.confirmProposal();
+  const result=store.view(id,token),added=result.slots.find(s=>s.proposed);assert.ok(added);assert.equal(added.end-added.start,result.duration*60000);
+  assert.equal(result.reply[added.id],'yes');assert.ok(result.slots.filter(s=>!s.proposed).every(s=>result.reply[s.id]==='no'));assert.equal(m.data.proposalOpen,false);assert.equal(m.data.proposalSaved,true);assert.equal(m.data.submissionSuccess,true);
+  const saved=result.version;await m.confirmProposal();assert.equal(store.view(id,token).version,saved);m.confirmSubmission();assert.equal(wx.relaunches.length,1);
+ }finally{global.wx=previous;}
+});
+
+test('补提返回不保存，持久化失败保留弹窗与时间，重试不会重复添加',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {m,id,token}=voterPage(wx);m.batch(event('',{choice:'no'}));const before=store.view(id,token).version;
+  await m.submit();m.closeProposal();assert.equal(m.data.proposalOpen,false);assert.equal(store.view(id,token).version,before);assert.ok(Object.values(m.data.choices).every(c=>c==='no'));
+  await m.submit();chooseProposal(m,m.data.meeting.deadline-3600000);wx.failSave(true);await m.confirmProposal();
+  assert.equal(m.data.proposalOpen,true);assert.match(m.data.proposalError,/空间不足/);assert.ok(m.data.proposalDate);assert.equal(m.data.submissionSuccess,false);assert.equal(store.view(id,token).version,before);
+  wx.failSave(false);await m.confirmProposal();assert.equal(store.view(id,token).slots.filter(s=>s.proposed).length,1);
+ }finally{global.wx=previous;}
+});
+
+test('两个旧页面连续补提，候选累加，双方待补对方时段，发起人列出待补充短称呼',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx),pages={};
+  for(const [i,actor] of ['demo-a','demo-b'].entries()){
+   store.setActor(actor);store.act(id,token,'claim',{roleId:'r'+i,profile:{name:actor}});store.act(id,token,'reply',{choices:Object.fromEntries(store.view(id,token).slots.map(s=>[s.id,'yes']))});
+   const m=page('meeting',wx);m.onLoad({id,token});m.onShow();m.beginEditTime();m.batch(event('',{choice:'no'}));await m.submit();pages[actor]=m;
+  }
+  store.setActor('demo-a');chooseProposal(pages['demo-a'],pages['demo-a'].data.meeting.deadline-3600000);await pages['demo-a'].confirmProposal();
+  store.setActor('demo-b');chooseProposal(pages['demo-b'],pages['demo-b'].data.meeting.deadline-1800000);pages['demo-b'].onShow();await pages['demo-b'].confirmProposal();
+  assert.equal(store.view(id,token).slots.filter(s=>s.proposed).length,2);assert.equal(pages['demo-b'].data.submissionSuccess,false);assert.equal(pages['demo-b'].data.supplementMode,true);
+  store.setActor('demo-owner');const owner=page('meeting',wx);owner.onLoad({id});owner.onShow();assert.equal(owner.data.supplementNames,'甲、乙');assert.equal(owner.data.meeting.originalSubmitted,2);assert.equal(owner.data.canOpenLockPicker,false);
+  store.setActor('demo-a');const a=page('meeting',wx);a.onLoad({id,token});a.onShow();assert.equal(a.data.supplementMode,true);assert.equal(a.data.slots.filter(s=>s.canChoose).length,1);
+  const old=a.data.slots.find(s=>!s.proposed);a.pick(event('',{slot:old.id,choice:'yes'}));assert.equal(a.data.choices[old.id],'no');a.batch(event('',{choice:'maybe'}));await a.submit();assert.equal(store.view(id,token).selfSubmitted,true);
+  store.setActor('demo-b');const b=page('meeting',wx);b.onLoad({id,token});b.onShow();b.batch(event('',{choice:'maybe'}));await b.submit();
+  store.setActor('demo-owner');owner.refresh();assert.equal(owner.data.supplementNames,'');assert.equal(owner.data.canOpenLockPicker,true);assert.equal(owner.data.lockCandidates.length,2);
+ }finally{global.wx=previous;}
+});
+
+test('新建议到来时刷新保留草稿，旧页面普通提交保存旧答案后引导补新项',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {m,id,token}=voterPage(wx),oldIds=m.data.slots.map(s=>s.id);m.pick(event('',{slot:oldIds[0],choice:'maybe'}));
+  store.setActor('demo-b');store.act(id,token,'claim',{roleId:'r1',profile:{name:'乙'}});
+  store.act(id,token,'propose',{choices:Object.fromEntries(oldIds.map(id=>[id,'no'])),date:D.labelTime(m.data.meeting.deadline-3600000).slice(0,10),time:'07:00'});
+  store.setActor('demo-a');await m.submit();assert.equal(m.data.submissionSuccess,false);assert.equal(m.data.supplementMode,true);assert.equal(m.data.choices[oldIds[0]],'maybe');
+  const newSlot=m.data.slots.find(s=>s.proposed);m.pick(event('',{slot:newSlot.id,choice:'yes'}));
+  m.refresh();assert.equal(m.data.choices[newSlot.id],'yes');assert.equal(store.view(id,token).reply[newSlot.id],undefined);await m.submit();assert.equal(store.view(id,token).reply[newSlot.id],'yes');
+ }finally{global.wx=previous;}
+});
+
+test('相同时段复用、会议关闭时建议失败、页面后台保存成功不会遗留可重复提交的建议窗',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {m,id,token}=voterPage(wx),length=m.data.slots.length,start=m.data.slots[0].start;
+  m.batch(event('',{choice:'no'}));await m.submit();chooseProposal(m,start);const saving=m.confirmProposal();m.onHide();await saving;
+  assert.equal(store.view(id,token).slots.length,length);assert.equal(store.view(id,token).reply['s'+start],'yes');assert.equal(m.data.proposalOpen,false);assert.equal(wx.relaunches.length,0);
+  m.onShow();m.beginEditTime();m.batch(event('',{choice:'no'}));await m.submit();chooseProposal(m,start+900000);
+  const raw=wx.storage.get('meeting-battle.mock.v1');raw.meetings[id].status='cancelled';const version=raw.meetings[id].version;
+  await m.confirmProposal();assert.equal(m.data.proposalOpen,true);assert.match(m.data.proposalError,/取消/);assert.equal(raw.meetings[id].version,version);assert.equal(raw.meetings[id].slots.length,length);
+ }finally{global.wx=previous;}
+});
+
+test('新增建议页面带提议者称呼，待补状态按已保存答案判断，草稿不会提前消除待补状态',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {m,id,token}=voterPage(wx);m.batch(event('',{choice:'no'}));await m.submit();chooseProposal(m,m.data.meeting.deadline-3600000);await m.confirmProposal();
+  const proposed=m.data.slots.find(s=>s.proposed);assert.equal(proposed.proposerName,'甲');assert.equal(proposed.needsAnswer,false);
+  store.setActor('demo-b');store.act(id,token,'claim',{roleId:'r1',profile:{name:'乙'}});const other=page('meeting',wx);other.onLoad({id,token});other.onShow();
+  let slot=other.data.slots.find(s=>s.proposed);assert.equal(slot.proposerName,'甲');assert.equal(slot.needsAnswer,true);
+  other.batch(event('',{choice:'yes'}));slot=other.data.slots.find(s=>s.proposed);assert.equal(slot.needsAnswer,true);await other.submit();assert.equal(other.data.slots.find(s=>s.proposed).needsAnswer,false);
+ }finally{global.wx=previous;}
+});
+
+test('创建预览、邀请卡和会议时段显示星期，首页更新时间用原格式，原始日期及候选编号不变',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const c=publishPage(wx),ids=c.data.slots.map(s=>s.id),dates=[...c.data.dates];assert.ok(c.data.slots.every(s=>/（周[日一二三四五六]）/.test(s.displayLabel)));
+  await c.publish();assert.ok(c.data.publishedInvite.slots.every(s=>/（周/.test(s.displayLabel)));assert.deepEqual(c.data.dates,dates);
+  const query=new URLSearchParams(c.data.publishedInvite.path.split('?')[1]),id=query.get('id'),token=query.get('token');
+  assert.deepEqual(store.view(id,token).slots.map(s=>s.id).sort(),[...ids].sort());assert.ok(store.view(id,token).slots.every(s=>!s.label.includes('（周')));
+  const m=page('meeting',wx);m.onLoad({id,token});m.onShow();assert.ok(m.data.slots.every(s=>/（周/.test(s.heatDate)));assert.match(m.data.datesText,/（周/);assert.match(m.data.deadline,/（周/);
+  const home=page('home',wx);home.onShow();assert.match(home.data.meetings[0].updatedAt,/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+ }finally{global.wx=previous;}
+});
+
+test('首页新增备选红标只提醒本人，未参会发起人不提醒，打开不清除，补齐后消失',()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx);assert.equal(store.list().find(m=>m.id===id).needsSupplement,false);
+  store.setActor('demo-a');store.act(id,token,'claim',{roleId:'r0',profile:{name:'甲'}});const baseSlots=store.view(id,token).slots;
+  store.act(id,token,'reply',{choices:Object.fromEntries(baseSlots.map(s=>[s.id,'yes']))});
+  store.setActor('demo-b');store.act(id,token,'claim',{roleId:'r1',profile:{name:'乙'}});
+  const date=store.view(id,token).dates[0];store.act(id,token,'propose',{choices:Object.fromEntries(baseSlots.map(s=>[s.id,'no'])),date,time:'07:00'});
+  assert.equal(store.list().find(m=>m.id===id).needsSupplement,false);
+  store.setActor('demo-owner');const home=page('home',wx);home.onLoad({});home.onShow();assert.equal(home.data.meetings[0].needsSupplement,false);
+  home.switchActor(event('1'));home.open(event('',{id}));home.onShow();assert.equal(home.data.meetings[0].needsSupplement,true);
+  store.setActor('demo-a');assert.equal(store.list().find(m=>m.id===id).needsSupplement,true);
+  const v=store.view(id,token),slot=v.slots.find(s=>s.proposed);store.act(id,token,'reply',{choices:{...v.reply,[slot.id]:'maybe'}});assert.equal(store.list().find(m=>m.id===id).needsSupplement,false);
+  store.setActor('demo-owner');home.refresh();assert.equal(home.data.meetings[0].needsSupplement,false);
+  store.setActor('demo-guest');store.act(id,token,'claim',{roleId:null,profile:{name:'旁听'}});assert.equal(store.list().find(m=>m.id===id).needsSupplement,false);
+ }finally{global.wx=previous;}
+});
+
+test('补选红标对截止、锁定、取消隐藏；发起人和受邀人的详情均带预计日期及截止星期',()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx);store.setActor('demo-b');store.act(id,token,'claim',{roleId:'r1',profile:{name:'乙'}});store.act(id,token,'reply',{choices:Object.fromEntries(store.view(id,token).slots.map(s=>[s.id,'yes']))});store.setActor('demo-a');store.act(id,token,'claim',{roleId:'r0',profile:{name:'甲'}});
+  const view=store.view(id,token);store.act(id,token,'propose',{choices:Object.fromEntries(view.slots.map(s=>[s.id,'no'])),date:view.dates[0],time:'07:00'});
+  for(const actor of ['demo-owner','demo-a']){
+   store.setActor(actor);const m=page('meeting',wx);m.onLoad({id,token});m.onShow();assert.match(m.data.datesText,/\d{4}-\d{2}-\d{2}（周[日一二三四五六]）/);assert.match(m.data.deadline,/（周[日一二三四五六]） \d{2}:\d{2}/);
+  }
+  store.setActor('demo-b');const raw=wx.storage.get('meeting-battle.mock.v1').meetings[id];assert.equal(store.list()[0].needsSupplement,true);
+  for(const status of ['locked','cancelled']){raw.status=status;assert.equal(store.list()[0].needsSupplement,false);}
+  raw.status='collecting';raw.deadline=Date.now()-1;assert.equal(store.list()[0].needsSupplement,false);
+ }finally{global.wx=previous;}
+});
+
+function infoEditor(wx,id,token){const p=page('edit-info',wx);p.onLoad({id,token});p.onShow();return p;}
+test('发起人进入独立编辑页预填三项，稳定行ID改名/备注/重排/新增，保存同步首页和认领名单',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx),before=store.view(id,token);const meeting=page('meeting',wx);meeting.onLoad({id,token});meeting.onShow();meeting.beginEditInfo();assert.match(wx.routes.at(-1),/pages\/edit-info\/edit-info/);
+  const p=infoEditor(wx,id,token);assert.equal(p.data.title,before.title);assert.equal(p.data.purpose,before.purpose);assert.equal(p.data.rows[0].id,before.roles[0].id);
+  p.field(event('更新主题',{field:'title'}));p.field(event('更新讨论目的',{field:'purpose'}));const key=p.data.rows[0].key;
+  p.rosterField(event('主持人',{key,field:'name',group:'roster'}));p.rosterField(event('研发 团队',{key,field:'note',group:'roster'}));p.moveMember(event('',{key,direction:1}));assert.equal(p.data.rows[1].id,before.roles[0].id);
+  p.addMember();const added=p.data.rows.at(-1).key;p.rosterField(event('新同事',{key:added,field:'name',group:'roster'}));p.rosterField(event('1',{key:added,field:'required',group:'roster'}));
+  await p.save();assert.equal(p.data.saved,true);assert.match(wx.routes.at(-1),/pages\/meeting\/meeting/);const result=store.view(id,token);assert.equal(result.title,'更新主题');assert.equal(result.total,3);assert.deepEqual(result.slots.map(s=>s.id),before.slots.map(s=>s.id));assert.equal(result.deadline,before.deadline);
+  assert.equal(result.editableRoster[1].name,'主持人');assert.equal(result.editableRoster[1].note,'研发 团队');assert.equal(result.editableRoster.at(-1).required,false);
+  const home=page('home',wx);home.onShow();assert.equal(home.data.meetings[0].title,'更新主题');
+  store.setActor('demo-a');const identity=page('identity',wx);identity.onLoad({id,token});identity.onShow();assert.ok(identity.data.roles.some(r=>r.name==='主持人' && r.note==='研发 团队'));assert.equal(identity.data.roles.length,4);
+ }finally{global.wx=previous;}
+});
+
+test('删除已认领人员保存前明确确认；取消不改绑定，确认转旁听且原选择保留',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx);store.setActor('demo-a');store.act(id,token,'claim',{roleId:'r0',profile:{nameSource:'role',avatar:'wxfile://a.png'}});store.act(id,token,'reply',{choices:Object.fromEntries(store.view(id,token).slots.map(s=>[s.id,'yes']))});
+  store.setActor('demo-owner');const p=infoEditor(wx,id,token);p.removeMember(event('',{key:'r0'}));let content='';
+  wx.showModal=o=>{content=o.content;o.success({confirm:false});};await p.save();assert.match(content,/甲/);assert.match(content,/转为旁听/);assert.equal(p.data.saved,false);assert.equal(store.view(id,token).members.find(m=>m.actor==='demo-a').roleId,'r0');
+  wx.showModal=o=>o.success({confirm:true});await p.save();store.setActor('demo-a');const result=store.view(id,token);assert.equal(result.self.roleId,null);assert.equal(result.self.profile.avatar,'wxfile://a.png');assert.ok(Object.values(result.reply).every(c=>c==='yes'));
+ }finally{global.wx=previous;}
+});
+
+test('编辑保存失败保留文字和名单，可重试；取消不保存，空字段就地弹OK',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx),old=store.view(id,token).title,p=infoEditor(wx,id,token);p.field(event('尚未保存',{field:'title'}));p.cancel();assert.equal(store.view(id,token).title,old);
+  p.field(event('',{field:'title'}));const modals=[];wx.showModal=o=>{modals.push(o);o.success({confirm:true});};await p.save();assert.equal(p.data.errorField,'title');assert.equal(modals.at(-1).confirmText,'OK');assert.equal(wx.scrolls.at(-1).selector,'#edit-title');
+  p.field(event('重试标题',{field:'title'}));wx.failSave(true);await p.save();assert.equal(p.data.saved,false);assert.equal(p.data.title,'重试标题');assert.match(p.data.error,/空间不足/);assert.equal(store.view(id,token).title,old);
+  wx.failSave(false);await p.save();assert.equal(p.data.saved,true);assert.equal(store.view(id,token).title,'重试标题');const version=store.view(id,token).version;await p.save();assert.equal(store.view(id,token).version,version);
+ }finally{global.wx=previous;}
+});
+
+test('编辑期间有人补提时间，保存三项仍保留新时段和回复；另一个旧编辑页不能覆盖元信息',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx),p=infoEditor(wx,id,token),stale=infoEditor(wx,id,token);p.field(event('新的讨论目的',{field:'purpose'}));
+  store.setActor('demo-a');store.act(id,token,'claim',{roleId:'r0',profile:{name:'甲'}});const v=store.view(id,token);store.act(id,token,'propose',{choices:Object.fromEntries(v.slots.map(s=>[s.id,'no'])),date:v.dates[0],time:'07:00'});
+  const before=D.clone(wx.storage.get('meeting-battle.mock.v1').meetings[id]);store.setActor('demo-owner');await p.save();
+  const after=wx.storage.get('meeting-battle.mock.v1').meetings[id];assert.deepEqual(after.slots,before.slots);assert.deepEqual(after.replies,before.replies);assert.equal(after.purpose,'新的讨论目的');
+  stale.field(event('过期编辑',{field:'title'}));await stale.save();assert.equal(stale.data.saved,false);assert.match(stale.data.error,/会议信息已被修改/);assert.notEqual(store.view(id,token).title,'过期编辑');
+ }finally{global.wx=previous;}
+});
+
+test('保存确认期间新增认领需重新确认，不会静默移除；原会议页草稿及头像模式改名同步保留',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {m,id,token}=voterPage(wx,true);m.pick(event('',{slot:m.data.slots[0].id,choice:'maybe'}));const draft=JSON.stringify(m.data.choices);
+  const p=infoEditor(wx,id,token);p.rosterField(event('我',{key:'r0',field:'name',group:'roster'}));p.removeMember(event('',{key:'r1'}));let raced=false;
+  wx.showModal=o=>{
+   if(o.title==='保存会议信息' && !raced){raced=true;store.setActor('demo-a');store.act(id,token,'claim',{roleId:'r1',profile:{name:'乙'}});store.setActor('demo-owner');}
+   o.success({confirm:true});
+  };
+  await p.save();assert.equal(p.data.saved,false);assert.match(p.data.error,/认领情况已变化/);assert.equal(store.view(id,token).members.find(p=>p.actor==='demo-a').roleId,'r1');
+  await p.save();assert.equal(p.data.saved,true);m.onShow();assert.equal(m.data.roleName,'我');assert.equal(m.data.meeting.self.profile.name,'我');assert.equal(JSON.stringify(m.data.choices),draft);
+ }finally{global.wx=previous;}
+});
+
+test('编辑页及入口阻止非发起人/截止/终态，导航失败不会重复保存',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx);store.setActor('demo-a');const outsider=infoEditor(wx,id,token);assert.equal(outsider.data.loaded,false);assert.equal(outsider.data.rows.length,0);assert.match(outsider.data.error,/仅发起人/);
+  store.setActor('demo-owner');const p=infoEditor(wx,id,token);wx.navigateBack=o=>o.fail();wx.redirectTo=o=>o.fail({errMsg:'failed'});p.field(event('已保存的主题',{field:'title'}));await p.save();assert.equal(p.data.saved,true);assert.equal(store.view(id,token).title,'已保存的主题');assert.match(p.data.error,/修改已保存/);
+  const raw=wx.storage.get('meeting-battle.mock.v1').meetings[id];raw.deadline=Date.now()-1;const closed=infoEditor(wx,id,token);assert.equal(closed.data.editable,false);
+  const m=page('meeting',wx);m.onLoad({id});m.onShow();const count=wx.routes.length;m.beginEditInfo();assert.equal(wx.routes.length,count);
+ }finally{global.wx=previous;}
+});
+
+test('编辑功能部分更新时明确提示补齐业务文件，不加载空名单造成误保存',()=>{
+ const previous=global.wx,wx=mockWx(),prepare=D.prepareInfoEdit;global.wx=wx;
+ try {const {id,token}=fixture(wx);delete D.prepareInfoEdit;const p=infoEditor(wx,id,token);assert.equal(p.data.loaded,false);assert.match(p.data.error,/domain\.js/);}
+ finally{D.prepareInfoEdit=prepare;global.wx=previous;}
+});
+
+test('已更正名单的旧会议无需重存：刷新即修复旧建议姓名快照，发起人和受邀人一致',()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {m,id,token}=voterPage(wx);let raw=wx.storage.get('meeting-battle.mock.v1').meetings[id];raw.roles[0].name='吴主任; 医院一线经验';
+  const v=store.view(id,token);store.act(id,token,'propose',{choices:Object.fromEntries(v.slots.map(s=>[s.id,'no'])),date:v.dates[0],time:'07:00'});
+  raw=wx.storage.get('meeting-battle.mock.v1').meetings[id];raw.roles[0].name='吴主任';raw.roles[0].note='医院一线经验';delete raw.slots.find(s=>s.proposed).proposerRoleId;
+  const before=JSON.stringify(raw);m.refresh();assert.equal(m.data.slots.find(s=>s.proposed).proposerName,'吴主任');assert.equal(JSON.stringify(raw),before);
+  store.setActor('demo-owner');const owner=page('meeting',wx);owner.onLoad({id});owner.onShow();assert.equal(owner.data.slots.find(s=>s.proposed).proposerName,'吴主任');assert.equal(JSON.stringify(raw),before);
+ }finally{global.wx=previous;}
+});
+
+test('参会发起人保存本人新增时段选择后红标消失，不等待他人；再次新增再提醒',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {m,id,token}=fourPersonLockPicker(wx);store.setActor('demo-b');const before=store.view(id,token);
+  store.act(id,token,'propose',{choices:Object.fromEntries(before.slots.map(s=>[s.id,'no'])),date:before.dates[0],time:'07:00'});
+  store.setActor('demo-owner');m.refresh();const home=page('home',wx);home.onLoad({});home.onShow();assert.equal(home.data.meetings[0].needsSupplement,true);
+  const added=m.data.slots.find(s=>s.proposed);m.pick(event('',{slot:added.id,choice:'maybe'}));home.refresh();assert.equal(home.data.meetings[0].needsSupplement,true);
+  await m.submit();home.refresh();assert.equal(home.data.meetings[0].needsSupplement,false);assert.equal(m.data.meeting.supplementMissing.length,2);assert.equal(m.data.canOpenLockPicker,false);
+  store.setActor('demo-c');const current=store.view(id,token);store.act(id,token,'propose',{choices:Object.fromEntries(current.slots.map(s=>[s.id,'no'])),date:current.dates[0],time:'07:30'});
+  store.setActor('demo-owner');home.refresh();assert.equal(home.data.meetings[0].needsSupplement,true);
+ }finally{global.wx=previous;}
+});
+
+test('尚未首次提交的成员不显示已提交后变动提醒；旧回复已交而新项缺失时才提醒',()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx);store.setActor('demo-a');store.act(id,token,'claim',{roleId:'r0',profile:{name:'甲'}});const v=store.view(id,token),old=v.slots.map(s=>s.id);
+  store.act(id,token,'propose',{choices:Object.fromEntries(old.map(id=>[id,'no'])),date:v.dates[0],time:'07:00'});
+  store.setActor('demo-b');store.act(id,token,'claim',{roleId:'r1',profile:{name:'乙'}});assert.equal(store.list()[0].needsSupplement,false);
+  store.act(id,token,'reply',{knownSlotIds:old,choices:Object.fromEntries(old.map(id=>[id,'yes']))});assert.equal(store.list()[0].needsSupplement,true);
+ }finally{global.wx=previous;}
+});
+
+test('发起人首页收齐绿标与详情完整回复一致，普通参会者隐藏，锁定后消失且状态同步',()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {m,id,token}=fourPersonLockPicker(wx,3);assert.equal(store.list()[0].collectionComplete,false);
+  store.setActor('demo-guest');const v=store.view(id,token);store.act(id,token,'reply',{choices:Object.fromEntries(v.slots.map(s=>[s.id,'maybe']))});assert.equal(store.list()[0].collectionComplete,false);
+  store.setActor('demo-owner');const home=page('home',wx);home.onLoad({});home.onShow();assert.equal(home.data.meetings[0].collectionComplete,true);assert.equal(store.view(id,token).lockState.allResponded,true);
+  const latest=store.view(id,token);store.act(id,token,'lock',{slotId:latest.lockState.candidateIds[0],version:latest.version});home.onShow();assert.equal(home.data.meetings[0].collectionComplete,false);assert.equal(home.data.meetings[0].status,'locked');
+ }finally{global.wx=previous;}
+});
+
+test('收齐后新增时段会撤下绿标，补齐恢复；旁听不影响，已取消隐藏，截止后仍可提示待确认',()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fourPersonLockPicker(wx);assert.equal(store.list()[0].collectionComplete,true);
+  store.setActor('demo-b');const v=store.view(id,token);store.act(id,token,'propose',{choices:Object.fromEntries(v.slots.map(s=>[s.id,'no'])),date:v.dates[0],time:'07:00'});
+  store.setActor('demo-owner');assert.equal(store.list()[0].collectionComplete,false);
+  for(const actor of ['demo-owner','demo-c','demo-guest']){store.setActor(actor);const current=store.view(id,token);store.act(id,token,'reply',{choices:{...current.reply,[current.slots.find(s=>s.proposed).id]:'maybe'}});}
+  store.setActor('demo-owner');assert.equal(store.list()[0].collectionComplete,true);
+  const raw=wx.storage.get('meeting-battle.mock.v1').meetings[id];raw.members.push({actor:'observer-extra',roleId:null,profile:{name:'旁听',avatar:''}});assert.equal(store.list()[0].collectionComplete,true);
+  raw.deadline=Date.now()-1;assert.equal(store.list()[0].collectionComplete,true);raw.status='cancelled';assert.equal(store.list()[0].collectionComplete,false);
+ }finally{global.wx=previous;}
+});
+
+test('创建名单分栏录入、必到可选与重排直接形成角色，备注空格标点完整保留且发布后不能误改',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const c=page('create',wx);c.onLoad({});assert.equal(c.data.rows.length,1);const first=c.data.rows[0].key;
+  c.rosterField(event('王院',{key:first,field:'name'}));c.rosterField(event('医院 一线；技术：支持',{key:first,field:'note'}));
+  c.addMember();const second=c.data.rows[1].key;c.rosterField(event('任总',{key:second,field:'name'}));c.rosterField(event('协调',{key:second,field:'note'}));c.rosterField(event('1',{key:second,field:'required'}));
+  c.moveMember(event('',{key:second,direction:-1}));assert.equal(c.data.rows[0].key,second);assert.equal(c.data.rows[1].note,'医院 一线；技术：支持');
+  c.setData({title:'逐行创建',purpose:'讨论',dates:[c.data.date],deadlineDate:c.data.date});c.preview();await c.publish();assert.ok(c.data.publishedInvite);assert.equal(c.data.publishedInvite.participants,'任总、王院');
+  const q=new URLSearchParams(c.data.publishedInvite.path.split('?')[1]),m=store.view(q.get('id'),q.get('token'));
+  assert.deepEqual(m.editableRoster.map(r=>[r.name,r.note,r.required]),[['任总','协调',false],['王院','医院 一线；技术：支持',true]]);assert.ok(m.editableRoster.every(r=>!('key' in r)));
+  const before=JSON.stringify(c.data.rows);c.addMember();c.removeMember(event('',{key:first}));c.rosterField(event('误改',{key:first,field:'name'}));assert.equal(JSON.stringify(c.data.rows),before);
+ }finally{global.wx=previous;}
+});
+
+test('创建名单校验空称呼、重名和全可选，修正后正常发布，已有候选不受名单编辑影响',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const c=publishPage(wx);c.setData({rows:[{key:'new-1',name:'',note:'只填备注',required:true}]});const slots=JSON.stringify(c.data.slots);
+  await c.publish();assert.equal(c.data.validationField,'roster');assert.match(c.data.validationMessage,/称呼/);assert.equal(store.list().length,0);
+  c.editRosterField();assert.equal(c.data.validationField,'');c.rosterField(event('甲',{key:'new-1',field:'name'}));c.addMember();const key=c.data.rows[1].key;c.rosterField(event('甲',{key,field:'name'}));await c.publish();assert.match(c.data.validationMessage,/重名/);
+  c.rosterField(event('乙',{key,field:'name'}));for(const row of c.data.rows)c.rosterField(event('1',{key:row.key,field:'required'}));await c.publish();assert.match(c.data.validationMessage,/必到/);
+  c.rosterField(event('0',{key:'new-1',field:'required'}));assert.equal(JSON.stringify(c.data.slots),slots);await c.publish();assert.ok(c.data.publishedInvite);
+ }finally{global.wx=previous;}
+});
+
+test('创建名单增删后临时标识不复用，30人上限明确提示，重排边界不破坏资料',()=>{
+ const wx=mockWx(),c=page('create',wx);c.onLoad({});
+ for(let i=0;i<30;i++){if(i)c.addMember();c.rosterField(event('成员'+i,{key:c.data.rows[i].key,field:'name'}));}
+ assert.equal(c.data.rows.length,30);c.addMember();assert.equal(c.data.rows.length,30);assert.match(c.data.validationMessage,/30/);
+ const removed=c.data.rows[1].key;c.removeMember(event('',{key:removed}));c.addMember();assert.equal(c.data.rows.length,30);assert.ok(!c.data.rows.some(r=>r.key===removed));assert.equal(new Set(c.data.rows.map(r=>r.key)).size,30);
+ const before=JSON.stringify(c.data.rows);c.moveMember(event('',{key:c.data.rows[0].key,direction:-1}));c.moveMember(event('',{key:c.data.rows.at(-1).key,direction:1}));assert.equal(JSON.stringify(c.data.rows),before);
+});
+
+test('新一轮预填分栏名单及属性顺序，重新创建不沿用旧绑定和回复',async()=>{
+ const previous=global.wx,wx=mockWx();global.wx=wx;
+ try {
+  const {id,token}=fixture(wx),v=store.view(id,token);store.act(id,token,'editInfo',{infoVersion:v.infoVersion,title:v.title,purpose:v.purpose,roster:[{...v.editableRoster[1],note:'协调：项目 支持',required:false},v.editableRoster[0]]});
+  const c=page('create',wx);c.onLoad({previous:id});assert.deepEqual(c.data.rows.map(r=>[r.name,r.note,r.required]),[['乙','协调：项目 支持',false],['甲','',true]]);assert.ok(c.data.rows.every(r=>!r.id));assert.equal(c.data.dates.length,0);assert.equal(c.data.slots.length,0);
+  c.addMember();assert.equal(new Set(c.data.rows.map(r=>r.key)).size,3);c.removeMember(event('',{key:c.data.rows[2].key}));
+  c.setData({dates:[c.data.date],deadlineDate:c.data.date});c.preview();await c.publish();assert.ok(c.data.publishedInvite);
+  const q=new URLSearchParams(c.data.publishedInvite.path.split('?')[1]),fresh=store.view(q.get('id'),q.get('token'));assert.equal(fresh.members.length,0);assert.equal(fresh.submitted,0);assert.equal(fresh.editableRoster[0].name,'乙');
  }finally{global.wx=previous;}
 });
